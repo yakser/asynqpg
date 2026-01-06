@@ -1,0 +1,114 @@
+version: "2"
+run:
+  concurrency: 2
+  tests: false
+  allow-parallel-runners: true
+  allow-serial-runners: true
+linters:
+  default: none
+  enable:
+    - errcheck
+    - goconst
+#    - goimports
+    - gosec
+    - govet
+    - ineffassign
+#    - gosimple
+    - staticcheck
+    - revive
+#    - typecheck
+    - unused
+    - errname
+    - unconvert
+    - whitespace
+    - copyloopvar
+    - bodyclose
+    - goprintffuncname
+    - nakedret
+    - unparam
+    - misspell
+    - exhaustive
+    - rowserrcheck
+    - wastedassign
+    - mirror
+    - nilnil
+    - nosprintfhostport
+    # - gocyclo
+    # - gocognit
+    # - dupl - it's very slow, enable if you really know why you need it
+#    - errcheck
+#    - gosec
+#    - govet
+#    - ineffassign
+#    - revive
+#    - staticcheck
+#    - unused
+  settings:
+    gosec:
+      severity: high
+    govet:
+      enable:
+        - shadow
+    revive:
+      rules:
+        - name: blank-imports
+          severity: error
+        - name: context-as-argument
+          severity: error
+        - name: context-keys-type
+          severity: error
+        - name: error-return
+          severity: error
+        - name: error-strings
+          severity: error
+        - name: error-naming
+          severity: error
+        - name: exported
+          severity: warning
+        - name: increment-decrement
+          severity: error
+        - name: var-declaration
+          severity: error
+    staticcheck:
+      checks:
+        - all
+#        - typecheck
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+        path: _test\.go
+      - linters:
+          - all
+        path: \.pb\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples/
+      - internal/tests/
+issues:
+  max-issues-per-linter: 20
+  max-same-issues: 5
+  fix: false
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples/
+      - internal/tests/
+  enable:
+    - goimports
+    - gofmt
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/yakser/asynqpg
