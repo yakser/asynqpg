@@ -1,0 +1,394 @@
+package producer
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/yakser/asynqpg"
+	"github.com/yakser/asynqpg/internal/lib/db"
+	"github.com/yakser/asynqpg/internal/lib/ptr"
+	"github.com/yakser/asynqpg/internal/repository"
+)
+
+type producerRepo interface {
+	PushTask(ctx context.Context, task *repository.PushTaskParams) (int64, error)
+	PushTaskWithExecutor(ctx context.Context, exec asynqpg.Querier, task *repository.PushTaskParams) (int64, error)
+	PushTasksMany(ctx context.Context, params repository.PushTasksManyParams) ([]int64, error)
+	PushTasksManyWithExecutor(ctx context.Context, exec repository.SelectExecutor, params repository.PushTasksManyParams) ([]int64, error)
+}
+
+type Producer struct {
+	repo            producerRepo
+	logger          *slog.Logger
+	defaultMaxRetry int
+	metrics         *asynqpg.Metrics
+	tracer          trace.Tracer
+}
+
+type Config struct {
+	Pool            asynqpg.Pool
+	Logger          *slog.Logger
+	DefaultMaxRetry int
+
+	// MeterProvider for metrics. If nil, global OTel MeterProvider is used.
+	MeterProvider metric.MeterProvider
+	// TracerProvider for tracing. If nil, global OTel TracerProvider is used.
+	TracerProvider trace.TracerProvider
+}
+
+func New(config Config) (*Producer, error) {
+	if config.Pool == nil {
+		return nil, fmt.Errorf("database pool is required")
+	}
+
+	m, err := asynqpg.NewMetrics(config.MeterProvider)
+	if err != nil {
+		return nil, fmt.Errorf("create metrics: %w", err)
+	}
+
+	producer := &Producer{
+		repo:            repository.NewRepository(config.Pool),
+		logger:          config.Logger,
+		defaultMaxRetry: config.DefaultMaxRetry,
+		metrics:         m,
+		tracer:          asynqpg.NewTracer(config.TracerProvider),
+	}
+
+	producer.setDefaults()
+	return producer, nil
+}
+
+func (p *Producer) setDefaults() {
+	if p.defaultMaxRetry <= 0 {
+		p.defaultMaxRetry = 3
+	}
+	if p.logger == nil {
+		p.logger = slog.Default()
+	}
+}
+
+func (p *Producer) Enqueue(ctx context.Context, task *asynqpg.Task, opts ...EnqueueOption) (int64, error) {
+	if task == nil {
+		return 0, fmt.Errorf("task cannot be nil")
+	}
+
+	if task.Type == "" {
+		return 0, fmt.Errorf("task type cannot be empty")
+	}
+
+	if task.Payload == nil {
+		return 0, fmt.Errorf("task payload cannot be nil")
+	}
+
+	ctx, span := p.tracer.Start(ctx, "asynqpg.enqueue",
+		trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(asynqpg.AttrTaskType.String(task.Type)),
+	)
+	defer span.End()
+
+	delay := p.calculateDelay(task)
+	maxRetry := p.calculateMaxRetry(task)
+
+	span.SetAttributes(attribute.Bool("has_delay", delay > 0))
+
+	params := &repository.PushTaskParams{
+		Type:             task.Type,
+		IdempotencyToken: task.IdempotencyToken,
+		Payload:          task.Payload,
+		Delay:            db.NewDuration(delay),
+		AttemptsLeft:     maxRetry,
+	}
+
+	start := time.Now()
+	id, err := p.repo.PushTask(ctx, params)
+	dur := time.Since(start)
+
+	taskTypeAttr := asynqpg.AttrTaskType.String(task.Type)
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "enqueue failed")
+		p.metrics.TasksErrors.Add(ctx, 1, metric.WithAttributes(
+			taskTypeAttr, asynqpg.AttrErrorType.String(asynqpg.ErrorTypeDB),
+		))
+		return 0, fmt.Errorf("enqueue task: %w", err)
+	}
+
+	span.SetAttributes(attribute.Int64("task_id", id))
+
+	p.metrics.TasksEnqueued.Add(ctx, 1, metric.WithAttributes(taskTypeAttr))
+	p.metrics.EnqueueDuration.Record(ctx, dur.Seconds(), metric.WithAttributes(taskTypeAttr))
+
+	p.logger.Info("task enqueued successfully",
+		"task_id", id,
+		"task_type", task.Type,
+		"delay", delay,
+		"max_retry", maxRetry,
+		"idempotency_token", ptr.DerefOrDefault(task.IdempotencyToken, ""),
+	)
+
+	return id, nil
+}
+
+func (p *Producer) calculateDelay(task *asynqpg.Task) time.Duration {
+	delay := task.Delay
+	if !task.ProcessAt.IsZero() {
+		delay = time.Until(task.ProcessAt)
+		if delay < 0 {
+			delay = 0
+		}
+	}
+	return delay
+}
+
+func (p *Producer) calculateMaxRetry(task *asynqpg.Task) int {
+	if task.MaxRetry != nil {
+		return *task.MaxRetry
+	}
+	return p.defaultMaxRetry
+}
+
+// EnqueueTx enqueues a task using the provided executor (typically a transaction).
+// This allows the task enqueue to be part of a larger transaction,
+// ensuring atomicity with other database operations.
+func (p *Producer) EnqueueTx(ctx context.Context, tx asynqpg.Querier, task *asynqpg.Task, opts ...EnqueueOption) (int64, error) {
+	if tx == nil {
+		return 0, fmt.Errorf("executor cannot be nil")
+	}
+
+	if task == nil {
+		return 0, fmt.Errorf("task cannot be nil")
+	}
+
+	if task.Type == "" {
+		return 0, fmt.Errorf("task type cannot be empty")
+	}
+
+	ctx, span := p.tracer.Start(ctx, "asynqpg.enqueue",
+		trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(asynqpg.AttrTaskType.String(task.Type)),
+	)
+	defer span.End()
+
+	delay := p.calculateDelay(task)
+	maxRetry := p.calculateMaxRetry(task)
+
+	params := &repository.PushTaskParams{
+		Type:             task.Type,
+		IdempotencyToken: task.IdempotencyToken,
+		Payload:          task.Payload,
+		Delay:            db.NewDuration(delay),
+		AttemptsLeft:     maxRetry,
+	}
+
+	start := time.Now()
+	id, err := p.repo.PushTaskWithExecutor(ctx, tx, params)
+	dur := time.Since(start)
+
+	taskTypeAttr := asynqpg.AttrTaskType.String(task.Type)
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "enqueue failed")
+		p.metrics.TasksErrors.Add(ctx, 1, metric.WithAttributes(
+			taskTypeAttr, asynqpg.AttrErrorType.String(asynqpg.ErrorTypeDB),
+		))
+		p.logger.Error("enqueue task in transaction",
+			"task_type", task.Type,
+			"error", err,
+		)
+		return 0, fmt.Errorf("enqueue task: %w", err)
+	}
+
+	span.SetAttributes(attribute.Int64("task_id", id))
+
+	p.metrics.TasksEnqueued.Add(ctx, 1, metric.WithAttributes(taskTypeAttr))
+	p.metrics.EnqueueDuration.Record(ctx, dur.Seconds(), metric.WithAttributes(taskTypeAttr))
+
+	p.logger.Info("task enqueued successfully in transaction",
+		"task_id", id,
+		"task_type", task.Type,
+		"delay", delay,
+		"max_retry", maxRetry,
+		"has_idempotency_token", task.IdempotencyToken != nil,
+	)
+
+	return id, nil
+}
+
+// EnqueueMany enqueues multiple tasks in a single batch operation.
+// Returns the IDs of inserted tasks. Duplicate tasks (by idempotency token) are skipped.
+// For very large batches (>5000 tasks), tasks are automatically chunked.
+func (p *Producer) EnqueueMany(ctx context.Context, tasks []*asynqpg.Task) ([]int64, error) {
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+
+	ctx, span := p.tracer.Start(ctx, "asynqpg.enqueue_many",
+		trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(attribute.Int("batch_size", len(tasks))),
+	)
+	defer span.End()
+
+	// Validate all tasks first
+	for i, task := range tasks {
+		if task == nil {
+			return nil, fmt.Errorf("task at index %d cannot be nil", i)
+		}
+		if task.Type == "" {
+			return nil, fmt.Errorf("task at index %d has empty type", i)
+		}
+		if task.Payload == nil {
+			return nil, fmt.Errorf("task at index %d has nil payload", i)
+		}
+	}
+
+	start := time.Now()
+
+	// Chunk large batches
+	const maxBatchSize = 5000
+	if len(tasks) <= maxBatchSize {
+		ids, err := p.enqueueBatch(ctx, tasks)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "batch enqueue failed")
+			return ids, err
+		}
+		p.recordBatchMetrics(ctx, tasks, time.Since(start))
+		return ids, nil
+	}
+
+	var allIDs []int64
+	for i := 0; i < len(tasks); i += maxBatchSize {
+		end := i + maxBatchSize
+		if end > len(tasks) {
+			end = len(tasks)
+		}
+		chunk := tasks[i:end]
+
+		ids, err := p.enqueueBatch(ctx, chunk)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "batch enqueue failed")
+			return allIDs, fmt.Errorf("chunk starting at index %d: %w", i, err)
+		}
+		allIDs = append(allIDs, ids...)
+	}
+
+	p.recordBatchMetrics(ctx, tasks, time.Since(start))
+
+	p.logger.Info("batch enqueue completed",
+		"total_tasks", len(tasks),
+		"inserted", len(allIDs),
+	)
+
+	return allIDs, nil
+}
+
+func (p *Producer) recordBatchMetrics(ctx context.Context, tasks []*asynqpg.Task, dur time.Duration) {
+	counts := make(map[string]int64)
+	for _, t := range tasks {
+		counts[t.Type]++
+	}
+	for taskType, count := range counts {
+		attrs := metric.WithAttributes(asynqpg.AttrTaskType.String(taskType))
+		p.metrics.TasksEnqueued.Add(ctx, count, attrs)
+		p.metrics.EnqueueDuration.Record(ctx, dur.Seconds(), attrs)
+	}
+}
+
+func (p *Producer) enqueueBatch(ctx context.Context, tasks []*asynqpg.Task) ([]int64, error) {
+	repoParams := make([]repository.PushTaskParams, len(tasks))
+	for i, task := range tasks {
+		delay := p.calculateDelay(task)
+		maxRetry := p.calculateMaxRetry(task)
+
+		repoParams[i] = repository.PushTaskParams{
+			Type:             task.Type,
+			IdempotencyToken: task.IdempotencyToken,
+			Payload:          task.Payload,
+			Delay:            db.NewDuration(delay),
+			AttemptsLeft:     maxRetry,
+		}
+	}
+
+	ids, err := p.repo.PushTasksMany(ctx, repository.PushTasksManyParams{Tasks: repoParams})
+	if err != nil {
+		return nil, fmt.Errorf("batch insert tasks: %w", err)
+	}
+
+	return ids, nil
+}
+
+// EnqueueManyTx enqueues multiple tasks in a single batch operation using the provided executor.
+// This allows the batch enqueue to be part of a larger transaction.
+func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks []*asynqpg.Task) ([]int64, error) {
+	if tx == nil {
+		return nil, fmt.Errorf("executor cannot be nil")
+	}
+
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+
+	// Validate all tasks first
+	for i, task := range tasks {
+		if task == nil {
+			return nil, fmt.Errorf("task at index %d cannot be nil", i)
+		}
+		if task.Type == "" {
+			return nil, fmt.Errorf("task at index %d has empty type", i)
+		}
+		if task.Payload == nil {
+			return nil, fmt.Errorf("task at index %d has nil payload", i)
+		}
+	}
+
+	repoParams := make([]repository.PushTaskParams, len(tasks))
+	for i, task := range tasks {
+		delay := p.calculateDelay(task)
+		maxRetry := p.calculateMaxRetry(task)
+
+		repoParams[i] = repository.PushTaskParams{
+			Type:             task.Type,
+			IdempotencyToken: task.IdempotencyToken,
+			Payload:          task.Payload,
+			Delay:            db.NewDuration(delay),
+			AttemptsLeft:     maxRetry,
+		}
+	}
+
+	start := time.Now()
+	ids, err := p.repo.PushTasksManyWithExecutor(ctx, tx, repository.PushTasksManyParams{Tasks: repoParams})
+	dur := time.Since(start)
+
+	if err != nil {
+		p.logger.Error("failed to batch enqueue tasks in transaction",
+			"count", len(tasks),
+			"error", err,
+		)
+		return nil, fmt.Errorf("batch insert tasks: %w", err)
+	}
+
+	p.recordBatchMetrics(ctx, tasks, dur)
+
+	p.logger.Info("batch enqueue in transaction completed",
+		"total_tasks", len(tasks),
+		"inserted", len(ids),
+	)
+
+	return ids, nil
+}
+
+// EnqueueOption configures enqueue behavior.
+// Reserved for future use (e.g., queue selection, priority, tags).
+type EnqueueOption func(*enqueueOptions)
+
+type enqueueOptions struct{}
