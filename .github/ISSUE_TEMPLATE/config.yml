@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://pkg.go.dev/github.com/yakser/asynqpg
+    about: Check the Go package documentation before opening an issue.
