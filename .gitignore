@@ -91,6 +91,7 @@ docker-data/
 # Python venv
 .venv
 
-ui/frontend/dist/
+# fixme: will be ignored in future
+#ui/frontend/dist/
 
 .scripts/
