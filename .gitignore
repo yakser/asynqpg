@@ -90,3 +90,5 @@ docker-data/
 
 # Python venv
 .venv
+
+ui/frontend/dist/
