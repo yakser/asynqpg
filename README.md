@@ -3,7 +3,7 @@
 Distributed task queue for Go, backed by PostgreSQL.
 
 [![Tests](https://github.com/yakser/asynqpg/actions/workflows/tests.yml/badge.svg)](https://github.com/yakser/asynqpg/actions/workflows/tests.yml)
-![Coverage](https://img.shields.io/badge/coverage-75%25-yellowgreen)
+![Coverage](https://img.shields.io/badge/coverage-74.7%25-yellowgreen)
 [![Go Reference](https://pkg.go.dev/badge/github.com/yakser/asynqpg.svg)](https://pkg.go.dev/github.com/yakser/asynqpg)
 
 ## Contents

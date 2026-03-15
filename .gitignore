@@ -92,3 +92,5 @@ docker-data/
 .venv
 
 ui/frontend/dist/
+
+.scripts/
