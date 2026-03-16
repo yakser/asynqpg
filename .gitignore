@@ -95,3 +95,5 @@ docker-data/
 #ui/frontend/dist/
 
 .scripts/
+
+baseline/
