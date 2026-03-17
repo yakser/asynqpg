@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/google/uuid v1.6.0
 	github.com/jmoiron/sqlx v1.4.0
-	github.com/lib/pq v1.10.9
+	github.com/lib/pq v1.11.2
 	github.com/yakser/asynqpg v0.0.0
 	github.com/yakser/asynqpg/ui v0.0.0
 	go.opentelemetry.io/otel v1.42.0
