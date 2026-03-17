@@ -58,7 +58,7 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Create frontend placeholder
+      - name: Create frontend placeholder for dist folder
         run: make fake-assets
 
       - name: Run integration tests (root)

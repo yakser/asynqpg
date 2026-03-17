@@ -7,6 +7,20 @@ updates:
     labels:
       - "dependencies"
 
+  - package-ecosystem: "gomod"
+    directory: "/ui"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "gomod"
+    directory: "/examples/demo"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
