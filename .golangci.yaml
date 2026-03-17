@@ -1,22 +1,21 @@
 version: "2"
 run:
   concurrency: 2
-  tests: false
+  tests: true
   allow-parallel-runners: true
   allow-serial-runners: true
+  build-tags:
+    - integration
 linters:
   default: none
   enable:
     - errcheck
     - goconst
-#    - goimports
     - gosec
     - govet
     - ineffassign
-#    - gosimple
     - staticcheck
     - revive
-#    - typecheck
     - unused
     - errname
     - unconvert
@@ -33,16 +32,6 @@ linters:
     - mirror
     - nilnil
     - nosprintfhostport
-    # - gocyclo
-    # - gocognit
-    # - dupl - it's very slow, enable if you really know why you need it
-#    - errcheck
-#    - gosec
-#    - govet
-#    - ineffassign
-#    - revive
-#    - staticcheck
-#    - unused
   settings:
     gosec:
       severity: high
@@ -72,7 +61,6 @@ linters:
     staticcheck:
       checks:
         - all
-#        - typecheck
   exclusions:
     generated: lax
     presets:

@@ -18,7 +18,14 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Run unit tests
+      - name: Create frontend placeholder
+        run: make fake-assets
+
+      - name: Run unit tests (root)
+        run: go test -race -count=1 ./...
+
+      - name: Run unit tests (ui)
+        working-directory: ui
         run: go test -race -count=1 ./...
 
   lint:
@@ -31,7 +38,14 @@ jobs:
         with:
           go-version: "1.25"
 
+      - name: Create frontend placeholder
+        run: make fake-assets
+
       - uses: golangci/golangci-lint-action@v9
+
+      - name: Lint UI module
+        working-directory: ui
+        run: golangci-lint run ./...
 
   integration-tests:
     name: Integration Tests
@@ -44,5 +58,12 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Run integration tests
+      - name: Create frontend placeholder
+        run: make fake-assets
+
+      - name: Run integration tests (root)
+        run: go test -race -count=1 -tags=integration ./...
+
+      - name: Run integration tests (ui)
+        working-directory: ui
         run: go test -race -count=1 -tags=integration ./...

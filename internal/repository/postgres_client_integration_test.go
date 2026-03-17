@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/yakser/asynqpg/internal/lib/db"
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 	"github.com/yakser/asynqpg/internal/repository"
+	"github.com/yakser/asynqpg/testutils"
 )
 
 // pushTask creates a pending task with the given type and 3 attempts.
@@ -56,10 +56,10 @@ func makeCompleted(t *testing.T, repo *repository.Repository, taskType string, i
 	require.NoError(t, err)
 }
 
-// makeCancelled cancels a pending task.
-func makeCancelled(t *testing.T, repo *repository.Repository, id int64) {
+// makeCancelled cancels a pending task using the client repository.
+func makeCancelled(t *testing.T, clientRepo *repository.ClientRepository, id int64) {
 	t.Helper()
-	_, _, err := repo.CancelTaskByID(context.Background(), id)
+	_, _, err := clientRepo.CancelTaskByID(context.Background(), id)
 	require.NoError(t, err)
 }
 
@@ -68,10 +68,11 @@ func TestGetTaskByID_Found(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id := pushTask(t, repo, "get-by-id-found")
 
-	got, err := repo.GetTaskByID(context.Background(), id)
+	got, err := clientRepo.GetTaskByID(context.Background(), id)
 
 	require.NoError(t, err)
 	assert.Equal(t, id, got.ID)
@@ -91,9 +92,9 @@ func TestGetTaskByID_NotFound(t *testing.T) {
 	t.Parallel()
 
 	database := testutils.SetupTestDatabase(t)
-	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
-	_, err := repo.GetTaskByID(context.Background(), 999999)
+	_, err := clientRepo.GetTaskByID(context.Background(), 999999)
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, sql.ErrNoRows))
@@ -104,12 +105,13 @@ func TestListTasks_FilterByStatus(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id1 := pushTask(t, repo, "list-filter-status-1")
 	_ = pushTask(t, repo, "list-filter-status-2")
 	makeFailed(t, repo, "list-filter-status-1", id1)
 
-	got, err := repo.ListTasks(context.Background(), repository.ListTasksParams{
+	got, err := clientRepo.ListTasks(context.Background(), repository.ListTasksParams{
 		Statuses: []string{"failed"},
 		Limit:    10,
 		Offset:   0,
@@ -127,6 +129,7 @@ func TestListTasks_Pagination(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	ids := make([]int64, 5)
 	for i := range ids {
@@ -134,7 +137,7 @@ func TestListTasks_Pagination(t *testing.T) {
 	}
 
 	// First page
-	page1, err := repo.ListTasks(context.Background(), repository.ListTasksParams{
+	page1, err := clientRepo.ListTasks(context.Background(), repository.ListTasksParams{
 		Types:    []string{"list-pagination"},
 		Limit:    2,
 		Offset:   0,
@@ -146,7 +149,7 @@ func TestListTasks_Pagination(t *testing.T) {
 	assert.Len(t, page1.Tasks, 2)
 
 	// Second page
-	page2, err := repo.ListTasks(context.Background(), repository.ListTasksParams{
+	page2, err := clientRepo.ListTasks(context.Background(), repository.ListTasksParams{
 		Types:    []string{"list-pagination"},
 		Limit:    2,
 		Offset:   2,
@@ -167,12 +170,13 @@ func TestListTasks_OrderBy(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id1 := pushTask(t, repo, "list-order")
 	id2 := pushTask(t, repo, "list-order")
 	id3 := pushTask(t, repo, "list-order")
 
-	got, err := repo.ListTasks(context.Background(), repository.ListTasksParams{
+	got, err := clientRepo.ListTasks(context.Background(), repository.ListTasksParams{
 		Types:    []string{"list-order"},
 		Limit:    10,
 		Offset:   0,
@@ -192,10 +196,11 @@ func TestCancelTaskByID_PendingTask(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id := pushTask(t, repo, "cancel-pending")
 
-	got, wasModified, err := repo.CancelTaskByID(context.Background(), id)
+	got, wasModified, err := clientRepo.CancelTaskByID(context.Background(), id)
 
 	require.NoError(t, err)
 	assert.True(t, wasModified)
@@ -208,11 +213,12 @@ func TestCancelTaskByID_RunningTask(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id := pushTask(t, repo, "cancel-running")
 	makeRunning(t, repo, "cancel-running", id)
 
-	got, wasModified, err := repo.CancelTaskByID(context.Background(), id)
+	got, wasModified, err := clientRepo.CancelTaskByID(context.Background(), id)
 
 	require.NoError(t, err)
 	assert.True(t, wasModified)
@@ -224,11 +230,12 @@ func TestCancelTaskByID_CompletedTask(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id := pushTask(t, repo, "cancel-completed")
 	makeCompleted(t, repo, "cancel-completed", id)
 
-	got, wasModified, err := repo.CancelTaskByID(context.Background(), id)
+	got, wasModified, err := clientRepo.CancelTaskByID(context.Background(), id)
 
 	require.NoError(t, err)
 	assert.False(t, wasModified)
@@ -240,11 +247,12 @@ func TestRetryTaskByID_FailedTask(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id := pushTask(t, repo, "retry-failed")
 	makeFailed(t, repo, "retry-failed", id)
 
-	got, wasModified, err := repo.RetryTaskByID(context.Background(), id)
+	got, wasModified, err := clientRepo.RetryTaskByID(context.Background(), id)
 
 	require.NoError(t, err)
 	assert.True(t, wasModified)
@@ -258,10 +266,11 @@ func TestRetryTaskByID_PendingTask(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id := pushTask(t, repo, "retry-pending")
 
-	_, wasModified, err := repo.RetryTaskByID(context.Background(), id)
+	_, wasModified, err := clientRepo.RetryTaskByID(context.Background(), id)
 
 	require.NoError(t, err)
 	assert.False(t, wasModified)
@@ -272,10 +281,11 @@ func TestDeleteTaskByID_Success(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id := pushTask(t, repo, "delete-success")
 
-	got, wasModified, err := repo.DeleteTaskByID(context.Background(), id)
+	got, wasModified, err := clientRepo.DeleteTaskByID(context.Background(), id)
 
 	require.NoError(t, err)
 	assert.True(t, wasModified)
@@ -283,7 +293,7 @@ func TestDeleteTaskByID_Success(t *testing.T) {
 	assert.Equal(t, "delete-success", got.Type)
 
 	// Verify the task is actually gone
-	_, err = repo.GetTaskByID(context.Background(), id)
+	_, err = clientRepo.GetTaskByID(context.Background(), id)
 	assert.True(t, errors.Is(err, sql.ErrNoRows))
 }
 
@@ -292,38 +302,20 @@ func TestDeleteTaskByID_RunningTask(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id := pushTask(t, repo, "delete-running")
 	makeRunning(t, repo, "delete-running", id)
 
-	_, wasModified, err := repo.DeleteTaskByID(context.Background(), id)
+	_, wasModified, err := clientRepo.DeleteTaskByID(context.Background(), id)
 
 	require.NoError(t, err)
 	assert.False(t, wasModified)
 
 	// Verify the task still exists
-	got, err := repo.GetTaskByID(context.Background(), id)
+	got, err := clientRepo.GetTaskByID(context.Background(), id)
 	require.NoError(t, err)
 	assert.Equal(t, "running", got.Status)
-}
-
-func TestGetCancelledTaskIDs_Basic(t *testing.T) {
-	t.Parallel()
-
-	database := testutils.SetupTestDatabase(t)
-	repo := repository.NewRepository(database)
-
-	id1 := pushTask(t, repo, "cancelled-ids-1")
-	id2 := pushTask(t, repo, "cancelled-ids-2")
-	id3 := pushTask(t, repo, "cancelled-ids-3")
-	makeCancelled(t, repo, id1)
-	makeCancelled(t, repo, id2)
-
-	got, err := repo.GetCancelledTaskIDs(context.Background(), []int64{id1, id2, id3})
-
-	require.NoError(t, err)
-	assert.Len(t, got, 2)
-	assert.ElementsMatch(t, []int64{id1, id2}, got)
 }
 
 func TestSnoozeTasksMany_Basic(t *testing.T) {
@@ -331,6 +323,7 @@ func TestSnoozeTasksMany_Basic(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	id1 := pushTask(t, repo, "snooze-many-1")
 	id2 := pushTask(t, repo, "snooze-many-2")
@@ -347,12 +340,12 @@ func TestSnoozeTasksMany_Basic(t *testing.T) {
 	assert.Equal(t, 2, count)
 
 	// Verify tasks are now pending with updated blocked_till
-	task1, err := repo.GetTaskByID(context.Background(), id1)
+	task1, err := clientRepo.GetTaskByID(context.Background(), id1)
 	require.NoError(t, err)
 	assert.Equal(t, "pending", task1.Status)
 	assert.WithinDuration(t, futureTime, task1.BlockedTill, time.Second)
 
-	task2, err := repo.GetTaskByID(context.Background(), id2)
+	task2, err := clientRepo.GetTaskByID(context.Background(), id2)
 	require.NoError(t, err)
 	assert.Equal(t, "pending", task2.Status)
 	assert.WithinDuration(t, futureTime, task2.BlockedTill, time.Second)

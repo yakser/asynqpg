@@ -13,8 +13,8 @@ import (
 
 	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/internal/lib/ptr"
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 	"github.com/yakser/asynqpg/producer"
+	"github.com/yakser/asynqpg/testutils"
 )
 
 func TestNew(t *testing.T) {

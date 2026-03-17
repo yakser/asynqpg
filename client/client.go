@@ -57,7 +57,7 @@ func New(config Config) (*Client, error) {
 	}
 
 	return &Client{
-		repo:   repository.NewRepository(config.Pool),
+		repo:   repository.NewClientRepository(config.Pool),
 		logger: logger,
 		tracer: asynqpg.NewTracer(config.TracerProvider),
 	}, nil

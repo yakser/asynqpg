@@ -11,8 +11,6 @@ import (
 	"github.com/yakser/asynqpg/internal/lib/db"
 )
 
-// FIXME: I think it's bad to place methods of the same structure in different files. Need to refactor this in future
-
 type Repository struct {
 	db asynqpg.Querier
 }
@@ -569,4 +567,22 @@ func (p *Repository) DeleteOldTasks(ctx context.Context, params DeleteOldTasksPa
 	}
 
 	return int(rowsAffected), nil
+}
+
+// GetCancelledTaskIDs returns which of the given task IDs have been cancelled in the database.
+// Used by the consumer to detect tasks that were cancelled while running.
+func (p *Repository) GetCancelledTaskIDs(ctx context.Context, ids []int64) ([]int64, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	const query = `SELECT id FROM asynqpg_tasks WHERE id = ANY($1) AND status = 'cancelled'`
+
+	var cancelledIDs []int64
+	err := p.db.SelectContext(ctx, &cancelledIDs, query, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("get cancelled task ids: %w", err)
+	}
+
+	return cancelledIDs, nil
 }

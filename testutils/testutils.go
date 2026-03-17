@@ -1,3 +1,5 @@
+// Package testutils provides test helpers for asynqpg integration tests.
+// This package is for testing only and should not be considered stable.
 package testutils
 
 import (
@@ -9,13 +11,10 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	// register postgres driver
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
-
-	"github.com/yakser/asynqpg/internal/repository"
 )
 
 const (
@@ -25,6 +24,7 @@ const (
 	postgresDB       = "testdb"
 )
 
+// SetupTestDatabase creates a PostgreSQL test container and returns a connected *sqlx.DB.
 func SetupTestDatabase(t *testing.T) *sqlx.DB {
 	t.Helper()
 	db, _ := SetupTestDatabaseWithConnStr(t)
@@ -36,33 +36,6 @@ func SetupTestDatabase(t *testing.T) *sqlx.DB {
 func SetupTestDatabaseWithConnStr(t *testing.T) (*sqlx.DB, string) {
 	t.Helper()
 	return setupDatabase(t, 10)
-}
-
-// DBOption configures test database setup.
-type DBOption func(*dbConfig)
-
-type dbConfig struct {
-	maxOpenConns int
-}
-
-// WithMaxOpenConns sets the maximum number of open connections for the test database pool.
-func WithMaxOpenConns(n int) DBOption {
-	return func(c *dbConfig) {
-		c.maxOpenConns = n
-	}
-}
-
-// SetupBenchDatabase creates a test database suitable for benchmarks.
-// Accepts testing.TB so it works with both *testing.T and *testing.B.
-func SetupBenchDatabase(tb testing.TB, opts ...DBOption) (*sqlx.DB, string) {
-	tb.Helper()
-
-	cfg := &dbConfig{maxOpenConns: 50}
-	for _, opt := range opts {
-		opt(cfg)
-	}
-
-	return setupDatabase(tb, cfg.maxOpenConns)
 }
 
 func setupDatabase(tb testing.TB, maxOpenConns int) (*sqlx.DB, string) {
@@ -117,6 +90,32 @@ func setupDatabase(tb testing.TB, maxOpenConns int) (*sqlx.DB, string) {
 	return db, connStr
 }
 
+// Task is a simplified representation of an asynqpg task for test assertions.
+type Task struct {
+	ID               int64          `db:"id"`
+	Type             string         `db:"type"`
+	IdempotencyToken *string        `db:"idempotency_token"`
+	Payload          []byte         `db:"payload"`
+	Status           string         `db:"status"`
+	Messages         pq.StringArray `db:"messages"`
+	BlockedTill      time.Time      `db:"blocked_till"`
+	AttemptsLeft     int            `db:"attempts_left"`
+	AttemptsElapsed  int            `db:"attempts_elapsed"`
+}
+
+// GetTaskByIdempotencyToken retrieves a task by its idempotency token for test assertions.
+func GetTaskByIdempotencyToken(t *testing.T, db *sqlx.DB, token string) (*Task, error) {
+	t.Helper()
+
+	var task Task
+	err := db.Get(&task, "SELECT id, type, idempotency_token, payload, status, messages, blocked_till, attempts_left, attempts_elapsed FROM asynqpg_tasks WHERE idempotency_token = $1", token)
+	if err != nil {
+		return nil, err
+	}
+
+	return &task, nil
+}
+
 func applyMigrations(tb testing.TB, db *sqlx.DB) {
 	tb.Helper()
 
@@ -125,7 +124,7 @@ func applyMigrations(tb testing.TB, db *sqlx.DB) {
 		tb.Fatal("failed to get current file path")
 	}
 
-	projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filename))))
+	projectRoot := filepath.Dir(filepath.Dir(filename))
 	migrationsDir := filepath.Join(projectRoot, "migrations")
 
 	migrationFiles := []string{
@@ -144,16 +143,4 @@ func applyMigrations(tb testing.TB, db *sqlx.DB) {
 			tb.Fatalf("failed to apply migration %s: %v", file, err)
 		}
 	}
-}
-
-func GetTaskByIdempotencyToken(t *testing.T, db *sqlx.DB, token string) (*repository.Task, error) {
-	t.Helper()
-
-	var task repository.Task
-	err := db.Get(&task, "SELECT id, type, idempotency_token, payload, status, messages, blocked_till, attempts_left, attempts_elapsed FROM asynqpg_tasks WHERE idempotency_token = $1", token)
-	if err != nil {
-		return nil, err
-	}
-
-	return &task, nil
 }

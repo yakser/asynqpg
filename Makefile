@@ -10,21 +10,24 @@ migrate: ## Apply migrations
 	@echo "Migrations completed"
 
 .PHONY: lint
-lint: ## Run golangci-lint
+lint: ## Run golangci-lint (all modules)
 	@echo "Running linter..."
 	golangci-lint run ./...
+	cd ui && golangci-lint run ./...
 	@echo "Linter completed"
 
 .PHONY: test
-test: ## Run unit tests
+test: ## Run unit tests (all modules)
 	@echo "Running unit tests..."
 	go test -v -race -count=1 ./...
+	cd ui && go test -v -race -count=1 ./...
 	@echo "Unit tests completed"
 
 .PHONY: test-integration
-test-integration: ## Run integration tests
+test-integration: ## Run integration tests (all modules)
 	@echo "Running integration tests..."
 	go test -v -race -count=1 -tags=integration ./...
+	cd ui && go test -v -race -count=1 -tags=integration ./...
 	@echo "Integration tests completed"
 
 .PHONY: test-all
@@ -35,6 +38,11 @@ bench: ## Run benchmarks (integration, requires Docker)
 	@echo "Running benchmarks..."
 	go test -v -tags=integration -bench=. -benchmem -count=3 -timeout=30m ./...
 	@echo "Benchmarks completed"
+
+.PHONY: fake-assets
+fake-assets: ## Create placeholder dist/ for Go-only development
+	@mkdir -p ui/frontend/dist/assets
+	@echo '<!doctype html><html><body>Run make build-frontend</body></html>' > ui/frontend/dist/index.html
 
 .PHONY: up
 up: ## Run postgresql in docker
@@ -57,8 +65,8 @@ demo-down: ## Stop all demo services
 	docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml down
 
 .PHONY: demo-run
-demo-run: ## Run demo (producer + consumers + UI + OTel)
-	go run ./examples/demo/...
+demo-run: ## Run demo
+	cd examples/demo && go run .
 
 .PHONY: demo
 demo: demo-up migrate demo-run ## Full demo: start infra, migrate, run example

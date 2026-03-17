@@ -11,6 +11,17 @@ import (
 	"github.com/yakser/asynqpg"
 )
 
+// ClientRepository provides task inspection and management operations.
+// It covers client/management use cases: get, list, cancel, retry, delete by ID.
+type ClientRepository struct {
+	db asynqpg.Querier
+}
+
+// NewClientRepository creates a new ClientRepository backed by the given querier.
+func NewClientRepository(db asynqpg.Querier) *ClientRepository {
+	return &ClientRepository{db: db}
+}
+
 // FullTask represents a complete task row from the database.
 type FullTask struct {
 	ID               int64          `db:"id"`
@@ -45,11 +56,11 @@ const fullTaskColumnsAliased = `t.id, t.type, t.payload, t.status, t.idempotency
 
 // GetTaskByID returns a single task by its ID.
 // Returns sql.ErrNoRows if the task is not found.
-func (p *Repository) GetTaskByID(ctx context.Context, id int64) (*FullTask, error) {
+func (r *ClientRepository) GetTaskByID(ctx context.Context, id int64) (*FullTask, error) {
 	query := fmt.Sprintf(`SELECT %s FROM asynqpg_tasks WHERE id = $1`, fullTaskColumns)
 
 	var task FullTask
-	err := p.db.GetContext(ctx, &task, query, id)
+	err := r.db.GetContext(ctx, &task, query, id)
 	if err != nil {
 		return nil, fmt.Errorf("get task by id: %w", err)
 	}
@@ -58,7 +69,7 @@ func (p *Repository) GetTaskByID(ctx context.Context, id int64) (*FullTask, erro
 }
 
 // GetTaskByIDWithExecutor returns a single task using the provided executor.
-func (p *Repository) GetTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, error) {
+func (r *ClientRepository) GetTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, error) {
 	query := fmt.Sprintf(`SELECT %s FROM asynqpg_tasks WHERE id = $1`, fullTaskColumns)
 
 	var task FullTask
@@ -88,16 +99,16 @@ type ListTasksResult struct {
 }
 
 // ListTasks returns tasks matching the given filters with pagination.
-func (p *Repository) ListTasks(ctx context.Context, params ListTasksParams) (*ListTasksResult, error) {
-	return p.listTasksInternal(ctx, p.db, params)
+func (r *ClientRepository) ListTasks(ctx context.Context, params ListTasksParams) (*ListTasksResult, error) {
+	return r.listTasksInternal(ctx, r.db, params)
 }
 
 // ListTasksWithExecutor returns tasks matching the given filters using the provided executor.
-func (p *Repository) ListTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params ListTasksParams) (*ListTasksResult, error) {
-	return p.listTasksInternal(ctx, exec, params)
+func (r *ClientRepository) ListTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params ListTasksParams) (*ListTasksResult, error) {
+	return r.listTasksInternal(ctx, exec, params)
 }
 
-func (p *Repository) listTasksInternal(ctx context.Context, exec asynqpg.Querier, params ListTasksParams) (*ListTasksResult, error) {
+func (r *ClientRepository) listTasksInternal(ctx context.Context, exec asynqpg.Querier, params ListTasksParams) (*ListTasksResult, error) {
 	orderColumn := "id"
 	switch params.OrderBy {
 	case "created_at", "updated_at", "blocked_till":
@@ -159,16 +170,16 @@ func (p *Repository) listTasksInternal(ctx context.Context, exec asynqpg.Querier
 // CancelTaskByID cancels a task if it's in a cancellable state (pending, failed, running).
 // Running tasks are marked as cancelled; the consumer detects this and cancels the handler context.
 // Returns the task row (updated or unchanged) and whether the update was performed.
-func (p *Repository) CancelTaskByID(ctx context.Context, id int64) (*FullTask, bool, error) {
-	return p.cancelTaskInternal(ctx, p.db, id)
+func (r *ClientRepository) CancelTaskByID(ctx context.Context, id int64) (*FullTask, bool, error) {
+	return r.cancelTaskInternal(ctx, r.db, id)
 }
 
 // CancelTaskByIDWithExecutor cancels a task using the provided executor.
-func (p *Repository) CancelTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
-	return p.cancelTaskInternal(ctx, exec, id)
+func (r *ClientRepository) CancelTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
+	return r.cancelTaskInternal(ctx, exec, id)
 }
 
-func (p *Repository) cancelTaskInternal(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
+func (r *ClientRepository) cancelTaskInternal(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
 	query := fmt.Sprintf(`WITH locked_task AS (
 		SELECT id, status, finalized_at
 		FROM asynqpg_tasks WHERE id = $1 FOR UPDATE
@@ -202,37 +213,19 @@ func (p *Repository) cancelTaskInternal(ctx context.Context, exec asynqpg.Querie
 	return &results[0].FullTask, results[0].WasModified, nil
 }
 
-// GetCancelledTaskIDs returns which of the given task IDs have been cancelled in the database.
-// Used by the consumer to detect tasks that were cancelled while running.
-func (p *Repository) GetCancelledTaskIDs(ctx context.Context, ids []int64) ([]int64, error) {
-	if len(ids) == 0 {
-		return nil, nil
-	}
-
-	const query = `SELECT id FROM asynqpg_tasks WHERE id = ANY($1) AND status = 'cancelled'`
-
-	var cancelledIDs []int64
-	err := p.db.SelectContext(ctx, &cancelledIDs, query, pq.Array(ids))
-	if err != nil {
-		return nil, fmt.Errorf("get cancelled task ids: %w", err)
-	}
-
-	return cancelledIDs, nil
-}
-
 // RetryTaskByID moves a failed/cancelled task back to pending state.
 // If attempts_left is 0, sets it to 1 to allow at least one more attempt.
 // Returns the task row (updated or unchanged) and whether the update was performed.
-func (p *Repository) RetryTaskByID(ctx context.Context, id int64) (*FullTask, bool, error) {
-	return p.retryTaskInternal(ctx, p.db, id)
+func (r *ClientRepository) RetryTaskByID(ctx context.Context, id int64) (*FullTask, bool, error) {
+	return r.retryTaskInternal(ctx, r.db, id)
 }
 
 // RetryTaskByIDWithExecutor retries a task using the provided executor.
-func (p *Repository) RetryTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
-	return p.retryTaskInternal(ctx, exec, id)
+func (r *ClientRepository) RetryTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
+	return r.retryTaskInternal(ctx, exec, id)
 }
 
-func (p *Repository) retryTaskInternal(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
+func (r *ClientRepository) retryTaskInternal(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
 	query := fmt.Sprintf(`WITH locked_task AS (
 		SELECT id, status, attempts_left
 		FROM asynqpg_tasks WHERE id = $1 FOR UPDATE
@@ -271,16 +264,16 @@ func (p *Repository) retryTaskInternal(ctx context.Context, exec asynqpg.Querier
 
 // DeleteTaskByID deletes a task if it's not currently running.
 // Returns the deleted task row and whether deletion was performed.
-func (p *Repository) DeleteTaskByID(ctx context.Context, id int64) (*FullTask, bool, error) {
-	return p.deleteTaskInternal(ctx, p.db, id)
+func (r *ClientRepository) DeleteTaskByID(ctx context.Context, id int64) (*FullTask, bool, error) {
+	return r.deleteTaskInternal(ctx, r.db, id)
 }
 
 // DeleteTaskByIDWithExecutor deletes a task using the provided executor.
-func (p *Repository) DeleteTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
-	return p.deleteTaskInternal(ctx, exec, id)
+func (r *ClientRepository) DeleteTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
+	return r.deleteTaskInternal(ctx, exec, id)
 }
 
-func (p *Repository) deleteTaskInternal(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
+func (r *ClientRepository) deleteTaskInternal(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
 	query := fmt.Sprintf(`WITH locked_task AS (
 		SELECT id, status FROM asynqpg_tasks WHERE id = $1 FOR UPDATE
 	),

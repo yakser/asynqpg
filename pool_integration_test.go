@@ -16,8 +16,8 @@ import (
 
 	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/client"
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 	"github.com/yakser/asynqpg/producer"
+	"github.com/yakser/asynqpg/testutils"
 )
 
 func TestPoolInterfaceSatisfaction(t *testing.T) {

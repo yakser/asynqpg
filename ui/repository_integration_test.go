@@ -6,102 +6,19 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/yakser/asynqpg/internal/lib/db"
-	repo "github.com/yakser/asynqpg/internal/repository"
-
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 )
 
-func setupRepo(t *testing.T) (*repository, *repo.Repository) {
+func setupRepo(t *testing.T) (*repository, *sqlx.DB) {
 	t.Helper()
 
-	database := testutils.SetupTestDatabase(t)
+	database := setupTestDB(t)
 	uiRepo := newRepository(database)
-	taskRepo := repo.NewRepository(database)
 
-	return uiRepo, taskRepo
-}
-
-func insertPendingTask(t *testing.T, taskRepo *repo.Repository, taskType string, payload []byte) int64 {
-	t.Helper()
-
-	tasks := []repo.PushTaskParams{
-		{Type: taskType, Payload: payload, AttemptsLeft: 3, Delay: db.NewDuration(0)},
-	}
-	ids, err := taskRepo.PushTasksMany(context.Background(), repo.PushTasksManyParams{Tasks: tasks})
-	require.NoError(t, err)
-	require.Len(t, ids, 1)
-	return ids[0]
-}
-
-func insertRunningTask(t *testing.T, taskRepo *repo.Repository, taskType string) int64 {
-	t.Helper()
-
-	id := insertPendingTask(t, taskRepo, taskType, []byte(`{}`))
-	tasks, err := taskRepo.GetReadyTasks(context.Background(), repo.GetReadyTasksParams{
-		Type: taskType, Limit: 1, Delay: time.Minute,
-	})
-	require.NoError(t, err)
-	require.Len(t, tasks, 1)
-	require.Equal(t, id, tasks[0].ID)
-	return id
-}
-
-func insertFailedTask(t *testing.T, taskRepo *repo.Repository, taskType string) int64 {
-	t.Helper()
-
-	id := insertRunningTask(t, taskRepo, taskType)
-	err := taskRepo.FailTasks(context.Background(), []int64{id}, "test failure")
-	require.NoError(t, err)
-	return id
-}
-
-func insertCompletedTask(t *testing.T, taskRepo *repo.Repository, taskType string) int64 {
-	t.Helper()
-
-	id := insertRunningTask(t, taskRepo, taskType)
-	err := taskRepo.CompleteTasks(context.Background(), []int64{id})
-	require.NoError(t, err)
-	return id
-}
-
-func insertFailedTaskWithZeroAttempts(t *testing.T, taskRepo *repo.Repository, taskType string) int64 {
-	t.Helper()
-
-	ctx := context.Background()
-	tasks := []repo.PushTaskParams{
-		{Type: taskType, Payload: []byte(`{}`), AttemptsLeft: 1, Delay: db.NewDuration(0)},
-	}
-	ids, err := taskRepo.PushTasksMany(ctx, repo.PushTasksManyParams{Tasks: tasks})
-	require.NoError(t, err)
-	id := ids[0]
-
-	// Fetch to set status to running
-	_, err = taskRepo.GetReadyTasks(ctx, repo.GetReadyTasksParams{
-		Type: taskType, Limit: 1, Delay: time.Minute,
-	})
-	require.NoError(t, err)
-
-	// Retry to decrement attempts_left (1 -> 0)
-	err = taskRepo.RetryTask(ctx, repo.RetryTaskParams{
-		ID: id, BlockedTill: time.Now(), Message: "decrement",
-	})
-	require.NoError(t, err)
-
-	// Fetch again and fail
-	_, err = taskRepo.GetReadyTasks(ctx, repo.GetReadyTasksParams{
-		Type: taskType, Limit: 1, Delay: time.Minute,
-	})
-	require.NoError(t, err)
-	err = taskRepo.FailTasks(ctx, []int64{id}, "final failure")
-	require.NoError(t, err)
-
-	return id
+	return uiRepo, database
 }
 
 // --- GetTaskTypeStats ---
@@ -121,14 +38,14 @@ func TestGetTaskTypeStats_EmptyDatabase(t *testing.T) {
 func TestGetTaskTypeStats_MultipleTypesAndStatuses(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	// Create failed/completed BEFORE pending to avoid GetReadyTasks interference
-	insertFailedTask(t, taskRepo, "stats-email")
-	insertCompletedTask(t, taskRepo, "stats-report")
-	insertPendingTask(t, taskRepo, "stats-email", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "stats-email", []byte(`{}`))
+	insertFailedTask(t, db, "stats-email")
+	insertCompletedTask(t, db, "stats-report")
+	insertPendingTask(t, db, "stats-email", []byte(`{}`))
+	insertPendingTask(t, db, "stats-email", []byte(`{}`))
 
 	stats, err := uiRepo.GetTaskTypeStats(ctx)
 
@@ -152,15 +69,15 @@ func TestGetTaskTypeStats_MultipleTypesAndStatuses(t *testing.T) {
 func TestGetTaskTypeStats_SingleTypeAllStatuses(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 	taskType := "stats-all-statuses"
 
 	// Create tasks that go through GetReadyTasks BEFORE the pending task
-	insertFailedTask(t, taskRepo, taskType)
-	insertCompletedTask(t, taskRepo, taskType)
-	insertRunningTask(t, taskRepo, taskType)
-	insertPendingTask(t, taskRepo, taskType, []byte(`{}`))
+	insertFailedTask(t, db, taskType)
+	insertCompletedTask(t, db, taskType)
+	insertRunningTask(t, db, taskType)
+	insertPendingTask(t, db, taskType, []byte(`{}`))
 
 	stats, err := uiRepo.GetTaskTypeStats(ctx)
 
@@ -196,13 +113,13 @@ func TestGetDistinctTaskTypes_EmptyDatabase(t *testing.T) {
 func TestGetDistinctTaskTypes_ReturnsUniqueSorted(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	insertPendingTask(t, taskRepo, "types-charlie", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "types-alpha", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "types-bravo", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "types-alpha", []byte(`{}`)) // duplicate
+	insertPendingTask(t, db, "types-charlie", []byte(`{}`))
+	insertPendingTask(t, db, "types-alpha", []byte(`{}`))
+	insertPendingTask(t, db, "types-bravo", []byte(`{}`))
+	insertPendingTask(t, db, "types-alpha", []byte(`{}`)) // duplicate
 
 	types, err := uiRepo.GetDistinctTaskTypes(ctx)
 
@@ -213,10 +130,10 @@ func TestGetDistinctTaskTypes_ReturnsUniqueSorted(t *testing.T) {
 func TestGetDistinctTaskTypes_CacheTTL(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	insertPendingTask(t, taskRepo, "cache-test-type", []byte(`{}`))
+	insertPendingTask(t, db, "cache-test-type", []byte(`{}`))
 
 	// First call – hits DB
 	types1, err := uiRepo.GetDistinctTaskTypes(ctx)
@@ -224,7 +141,7 @@ func TestGetDistinctTaskTypes_CacheTTL(t *testing.T) {
 	assert.Contains(t, types1, "cache-test-type")
 
 	// Add another type
-	insertPendingTask(t, taskRepo, "cache-test-type-new", []byte(`{}`))
+	insertPendingTask(t, db, "cache-test-type-new", []byte(`{}`))
 
 	// Second call – should return cached data (no "cache-test-type-new")
 	types2, err := uiRepo.GetDistinctTaskTypes(ctx)
@@ -238,12 +155,12 @@ func TestGetDistinctTaskTypes_CacheTTL(t *testing.T) {
 func TestListTasks_NoFilters(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	payload := []byte(`{"key":"value","nested":{"a":1}}`)
-	insertPendingTask(t, taskRepo, "list-no-filter", payload)
-	insertPendingTask(t, taskRepo, "list-no-filter", []byte(`{}`))
+	insertPendingTask(t, db, "list-no-filter", payload)
+	insertPendingTask(t, db, "list-no-filter", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Limit:    100,
@@ -269,13 +186,13 @@ func TestListTasks_NoFilters(t *testing.T) {
 func TestListTasks_FilterByStatus(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	// Create failed/completed BEFORE pending to avoid GetReadyTasks interference
-	insertFailedTask(t, taskRepo, "list-status")
-	insertCompletedTask(t, taskRepo, "list-status")
-	insertPendingTask(t, taskRepo, "list-status", []byte(`{}`))
+	insertFailedTask(t, db, "list-status")
+	insertCompletedTask(t, db, "list-status")
+	insertPendingTask(t, db, "list-status", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Statuses: []string{"failed"},
@@ -293,13 +210,13 @@ func TestListTasks_FilterByStatus(t *testing.T) {
 func TestListTasks_FilterByMultipleStatuses(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	// Create failed/completed BEFORE pending to avoid GetReadyTasks interference
-	insertFailedTask(t, taskRepo, "list-multi-status")
-	insertCompletedTask(t, taskRepo, "list-multi-status")
-	insertPendingTask(t, taskRepo, "list-multi-status", []byte(`{}`))
+	insertFailedTask(t, db, "list-multi-status")
+	insertCompletedTask(t, db, "list-multi-status")
+	insertPendingTask(t, db, "list-multi-status", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Statuses: []string{"pending", "failed"},
@@ -318,12 +235,12 @@ func TestListTasks_FilterByMultipleStatuses(t *testing.T) {
 func TestListTasks_FilterByType(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	insertPendingTask(t, taskRepo, "list-type-a", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "list-type-a", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "list-type-b", []byte(`{}`))
+	insertPendingTask(t, db, "list-type-a", []byte(`{}`))
+	insertPendingTask(t, db, "list-type-a", []byte(`{}`))
+	insertPendingTask(t, db, "list-type-b", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Types:    []string{"list-type-a"},
@@ -342,12 +259,12 @@ func TestListTasks_FilterByType(t *testing.T) {
 func TestListTasks_FilterByIDs(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	id1 := insertPendingTask(t, taskRepo, "list-ids", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "list-ids", []byte(`{}`))
-	id3 := insertPendingTask(t, taskRepo, "list-ids", []byte(`{}`))
+	id1 := insertPendingTask(t, db, "list-ids", []byte(`{}`))
+	insertPendingTask(t, db, "list-ids", []byte(`{}`))
+	id3 := insertPendingTask(t, db, "list-ids", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		IDs:      []int64{id1, id3},
@@ -366,11 +283,11 @@ func TestListTasks_FilterByIDs(t *testing.T) {
 func TestListTasks_Pagination(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {
-		insertPendingTask(t, taskRepo, "list-page", []byte(`{}`))
+		insertPendingTask(t, db, "list-page", []byte(`{}`))
 	}
 
 	page1, err := uiRepo.ListTasks(ctx, ListTasksParams{
@@ -414,12 +331,12 @@ func TestListTasks_Pagination(t *testing.T) {
 func TestListTasks_SortOrderDESC(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	insertPendingTask(t, taskRepo, "list-sort", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "list-sort", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "list-sort", []byte(`{}`))
+	insertPendingTask(t, db, "list-sort", []byte(`{}`))
+	insertPendingTask(t, db, "list-sort", []byte(`{}`))
+	insertPendingTask(t, db, "list-sort", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Types:    []string{"list-sort"},
@@ -439,11 +356,11 @@ func TestListTasks_SortOrderDESC(t *testing.T) {
 func TestListTasks_SortByCreatedAt(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	insertPendingTask(t, taskRepo, "list-sort-created", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "list-sort-created", []byte(`{}`))
+	insertPendingTask(t, db, "list-sort-created", []byte(`{}`))
+	insertPendingTask(t, db, "list-sort-created", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Types:    []string{"list-sort-created"},
@@ -460,13 +377,13 @@ func TestListTasks_SortByCreatedAt(t *testing.T) {
 func TestListTasks_CombinedFilters(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	// Create failed task BEFORE pending to avoid GetReadyTasks picking up the wrong task
-	insertFailedTask(t, taskRepo, "list-combo-a")
-	insertPendingTask(t, taskRepo, "list-combo-a", []byte(`{}`))
-	insertPendingTask(t, taskRepo, "list-combo-b", []byte(`{}`))
+	insertFailedTask(t, db, "list-combo-a")
+	insertPendingTask(t, db, "list-combo-a", []byte(`{}`))
+	insertPendingTask(t, db, "list-combo-b", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Types:    []string{"list-combo-a"},
@@ -504,14 +421,14 @@ func TestListTasks_EmptyResult(t *testing.T) {
 func TestListTasks_LargePayloadSize(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	largePayload := make([]byte, 100*1024) // 100KB
 	for i := range largePayload {
 		largePayload[i] = 'A'
 	}
-	insertPendingTask(t, taskRepo, "list-large-payload", largePayload)
+	insertPendingTask(t, db, "list-large-payload", largePayload)
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Types:    []string{"list-large-payload"},
@@ -528,10 +445,10 @@ func TestListTasks_LargePayloadSize(t *testing.T) {
 func TestListTasks_InvalidOrderByDefaultsToID(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	insertPendingTask(t, taskRepo, "list-invalid-order", []byte(`{}`))
+	insertPendingTask(t, db, "list-invalid-order", []byte(`{}`))
 
 	// The repository code defaults unknown order_by to "id"
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
@@ -550,12 +467,12 @@ func TestListTasks_InvalidOrderByDefaultsToID(t *testing.T) {
 func TestBulkRetryFailed_AllFailed(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	id1 := insertFailedTask(t, taskRepo, "bulk-retry-all")
-	id2 := insertFailedTask(t, taskRepo, "bulk-retry-all")
-	id3 := insertFailedTask(t, taskRepo, "bulk-retry-all")
+	id1 := insertFailedTask(t, db, "bulk-retry-all")
+	id2 := insertFailedTask(t, db, "bulk-retry-all")
+	id3 := insertFailedTask(t, db, "bulk-retry-all")
 
 	affected, err := uiRepo.BulkRetryFailed(ctx, nil)
 
@@ -578,12 +495,12 @@ func TestBulkRetryFailed_AllFailed(t *testing.T) {
 func TestBulkRetryFailed_FilterByType(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	insertFailedTask(t, taskRepo, "bulk-retry-type-a")
-	insertFailedTask(t, taskRepo, "bulk-retry-type-a")
-	id3 := insertFailedTask(t, taskRepo, "bulk-retry-type-b")
+	insertFailedTask(t, db, "bulk-retry-type-a")
+	insertFailedTask(t, db, "bulk-retry-type-a")
+	id3 := insertFailedTask(t, db, "bulk-retry-type-b")
 
 	filterType := "bulk-retry-type-a"
 	affected, err := uiRepo.BulkRetryFailed(ctx, &filterType)
@@ -618,15 +535,15 @@ func TestBulkRetryFailed_NoMatchingTasks(t *testing.T) {
 func TestBulkRetryFailed_SkipsNonFailedTasks(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	// Create tasks that go through GetReadyTasks BEFORE the pending task
 	// to avoid GetReadyTasks picking up the wrong pending task.
-	failedID := insertFailedTask(t, taskRepo, "bulk-retry-skip")
-	completedID := insertCompletedTask(t, taskRepo, "bulk-retry-skip")
-	runningID := insertRunningTask(t, taskRepo, "bulk-retry-skip")
-	pendingID := insertPendingTask(t, taskRepo, "bulk-retry-skip", []byte(`{}`))
+	failedID := insertFailedTask(t, db, "bulk-retry-skip")
+	completedID := insertCompletedTask(t, db, "bulk-retry-skip")
+	runningID := insertRunningTask(t, db, "bulk-retry-skip")
+	pendingID := insertPendingTask(t, db, "bulk-retry-skip", []byte(`{}`))
 
 	filterType := "bulk-retry-skip"
 	affected, err := uiRepo.BulkRetryFailed(ctx, &filterType)
@@ -656,10 +573,10 @@ func TestBulkRetryFailed_SkipsNonFailedTasks(t *testing.T) {
 func TestBulkRetryFailed_SetsAttemptsLeftToOneWhenZero(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	id := insertFailedTaskWithZeroAttempts(t, taskRepo, "bulk-retry-zero-attempts")
+	id := insertFailedTaskWithZeroAttempts(t, db, "bulk-retry-zero-attempts")
 
 	affected, err := uiRepo.BulkRetryFailed(ctx, nil)
 
@@ -681,12 +598,12 @@ func TestBulkRetryFailed_SetsAttemptsLeftToOneWhenZero(t *testing.T) {
 func TestBulkRetryFailed_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	// Create 20 failed tasks
 	for i := 0; i < 20; i++ {
-		insertFailedTask(t, taskRepo, "bulk-retry-concurrent")
+		insertFailedTask(t, db, "bulk-retry-concurrent")
 	}
 
 	// Run 4 concurrent bulk retries
@@ -731,12 +648,12 @@ func TestBulkRetryFailed_ConcurrentAccess(t *testing.T) {
 func TestBulkDeleteFailed_AllFailed(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	insertFailedTask(t, taskRepo, "bulk-delete-all")
-	insertFailedTask(t, taskRepo, "bulk-delete-all")
-	insertFailedTask(t, taskRepo, "bulk-delete-all")
+	insertFailedTask(t, db, "bulk-delete-all")
+	insertFailedTask(t, db, "bulk-delete-all")
+	insertFailedTask(t, db, "bulk-delete-all")
 
 	affected, err := uiRepo.BulkDeleteFailed(ctx, nil)
 
@@ -757,12 +674,12 @@ func TestBulkDeleteFailed_AllFailed(t *testing.T) {
 func TestBulkDeleteFailed_FilterByType(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	insertFailedTask(t, taskRepo, "bulk-del-type-a")
-	insertFailedTask(t, taskRepo, "bulk-del-type-a")
-	insertFailedTask(t, taskRepo, "bulk-del-type-b")
+	insertFailedTask(t, db, "bulk-del-type-a")
+	insertFailedTask(t, db, "bulk-del-type-a")
+	insertFailedTask(t, db, "bulk-del-type-b")
 
 	filterType := "bulk-del-type-a"
 	affected, err := uiRepo.BulkDeleteFailed(ctx, &filterType)
@@ -797,13 +714,13 @@ func TestBulkDeleteFailed_NoMatchingTasks(t *testing.T) {
 func TestBulkDeleteFailed_SkipsNonFailedTasks(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	// Create failed/completed BEFORE pending to avoid GetReadyTasks interference
-	insertFailedTask(t, taskRepo, "bulk-del-skip")
-	completedID := insertCompletedTask(t, taskRepo, "bulk-del-skip")
-	pendingID := insertPendingTask(t, taskRepo, "bulk-del-skip", []byte(`{}`))
+	insertFailedTask(t, db, "bulk-del-skip")
+	completedID := insertCompletedTask(t, db, "bulk-del-skip")
+	pendingID := insertPendingTask(t, db, "bulk-del-skip", []byte(`{}`))
 
 	filterType := "bulk-del-skip"
 	affected, err := uiRepo.BulkDeleteFailed(ctx, &filterType)
@@ -825,12 +742,12 @@ func TestBulkDeleteFailed_SkipsNonFailedTasks(t *testing.T) {
 func TestBulkDeleteFailed_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 
-	uiRepo, taskRepo := setupRepo(t)
+	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
 	// Create 20 failed tasks
 	for i := 0; i < 20; i++ {
-		insertFailedTask(t, taskRepo, "bulk-del-concurrent")
+		insertFailedTask(t, db, "bulk-del-concurrent")
 	}
 
 	// Run 4 concurrent bulk deletes

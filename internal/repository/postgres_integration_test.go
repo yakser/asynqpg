@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/yakser/asynqpg/internal/lib/db"
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 	"github.com/yakser/asynqpg/internal/repository"
+	"github.com/yakser/asynqpg/testutils"
 )
 
 func ptr(s string) *string { return &s }
@@ -502,6 +502,26 @@ func TestGetStuckTasks_Basic(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, id, got[0].ID)
 	assert.Equal(t, "stuck-basic", got[0].Type)
+}
+
+func TestGetCancelledTaskIDs_Basic(t *testing.T) {
+	t.Parallel()
+
+	database := testutils.SetupTestDatabase(t)
+	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
+
+	id1 := pushTask(t, repo, "cancelled-ids-1")
+	id2 := pushTask(t, repo, "cancelled-ids-2")
+	id3 := pushTask(t, repo, "cancelled-ids-3")
+	makeCancelled(t, clientRepo, id1)
+	makeCancelled(t, clientRepo, id2)
+
+	got, err := repo.GetCancelledTaskIDs(context.Background(), []int64{id1, id2, id3})
+
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+	assert.ElementsMatch(t, []int64{id1, id2}, got)
 }
 
 func TestDeleteOldTasks_Basic(t *testing.T) {

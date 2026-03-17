@@ -18,8 +18,8 @@ import (
 	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/consumer"
 	"github.com/yakser/asynqpg/internal/lib/ptr"
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 	"github.com/yakser/asynqpg/producer"
+	"github.com/yakser/asynqpg/testutils"
 )
 
 type mockTaskHandler struct {
@@ -718,7 +718,6 @@ func TestTaskLockDuringExecution(t *testing.T) {
 		var taskProcessingCount int32
 
 		// Shared handler that tracks which consumer picked up the task
-		// fixme: isConsumer1 bool выглядит стремно
 		createHandler := func(consumerName string, isConsumer1 bool) *mockTaskHandler {
 			return &mockTaskHandler{
 				handleFunc: func(ctx context.Context, task *asynqpg.TaskInfo) error {

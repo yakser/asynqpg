@@ -14,8 +14,8 @@ import (
 
 	"github.com/yakser/asynqpg/internal/completer"
 	"github.com/yakser/asynqpg/internal/lib/db"
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 	"github.com/yakser/asynqpg/internal/repository"
+	"github.com/yakser/asynqpg/testutils"
 )
 
 func setupTest(t *testing.T) (*repository.Repository, *completer.BatchCompleter) {

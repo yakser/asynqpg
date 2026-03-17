@@ -657,6 +657,10 @@ documentation improvements, and code changes. See [`CONTRIBUTING.md`](CONTRIBUTI
 for local setup, contribution workflow, testing expectations, and pull request
 guidelines.
 
+## TODO
+
+- [ ] Move `asynqpgtest` to a separate module to avoid pulling `testcontainers-go` into consumer projects
+
 ## Project Status
 
 Under active development. The API may change before v1.0. Bug reports and

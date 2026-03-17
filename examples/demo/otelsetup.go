@@ -1,4 +1,4 @@
-package otelsetup
+package main
 
 import (
 	"context"
@@ -16,18 +16,18 @@ import (
 )
 
 const (
-	defaultEndpoint       = "localhost:4317"
+	defaultOTelEndpoint   = "localhost:4317"
 	defaultMetricInterval = 5 * time.Second
 )
 
-// Providers holds initialized OTel SDK providers.
-type Providers struct {
+// otelProviders holds initialized OTel SDK providers.
+type otelProviders struct {
 	TracerProvider *sdktrace.TracerProvider
 	MeterProvider  *metric.MeterProvider
 }
 
 // Shutdown gracefully shuts down both providers.
-func (p *Providers) Shutdown(ctx context.Context) {
+func (p *otelProviders) Shutdown(ctx context.Context) {
 	if p.TracerProvider != nil {
 		_ = p.TracerProvider.Shutdown(ctx)
 	}
@@ -36,13 +36,13 @@ func (p *Providers) Shutdown(ctx context.Context) {
 	}
 }
 
-// Init creates and registers OTel TracerProvider and MeterProvider
+// otelInit creates and registers OTel TracerProvider and MeterProvider
 // configured to export via OTLP gRPC.
 //
 // Endpoint is read from OTEL_EXPORTER_OTLP_ENDPOINT env var,
 // defaulting to localhost:4317.
-func Init(ctx context.Context, serviceName string) (*Providers, error) {
-	endpoint := defaultEndpoint
+func otelInit(ctx context.Context, serviceName string) (*otelProviders, error) {
+	endpoint := defaultOTelEndpoint
 	if v := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"); v != "" {
 		endpoint = v
 	}
@@ -84,7 +84,7 @@ func Init(ctx context.Context, serviceName string) (*Providers, error) {
 	)
 	otel.SetMeterProvider(mp)
 
-	return &Providers{
+	return &otelProviders{
 		TracerProvider: tp,
 		MeterProvider:  mp,
 	}, nil

@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/yakser/asynqpg/internal/lib/db"
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 	"github.com/yakser/asynqpg/internal/repository"
+	"github.com/yakser/asynqpg/testutils"
 )
 
 func TestPushTasksMany_Basic(t *testing.T) {

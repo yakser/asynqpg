@@ -20,7 +20,6 @@ import (
 
 	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/consumer"
-	"github.com/yakser/asynqpg/internal/otelsetup"
 	"github.com/yakser/asynqpg/producer"
 	"github.com/yakser/asynqpg/ui"
 )
@@ -40,14 +39,14 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	// OTel SDK setup.
-	otel, err := otelsetup.Init(ctx, serviceName)
+	otelProvs, err := otelInit(ctx, serviceName)
 	if err != nil {
 		log.Fatalf("failed to init OTel: %v", err)
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		otel.Shutdown(shutdownCtx)
+		otelProvs.Shutdown(shutdownCtx)
 	}()
 
 	// Database.
@@ -63,8 +62,8 @@ func main() {
 	p, err := producer.New(producer.Config{
 		Pool:           db,
 		Logger:         logger.With("component", "producer"),
-		MeterProvider:  otel.MeterProvider,
-		TracerProvider: otel.TracerProvider,
+		MeterProvider:  otelProvs.MeterProvider,
+		TracerProvider: otelProvs.TracerProvider,
 	})
 	if err != nil {
 		log.Fatalf("failed to create producer: %v", err)
@@ -83,8 +82,8 @@ func main() {
 	c1, err := consumer.New(consumer.Config{
 		Pool:               db,
 		Logger:             logger.With("component", "consumer-1"),
-		MeterProvider:      otel.MeterProvider,
-		TracerProvider:     otel.TracerProvider,
+		MeterProvider:      otelProvs.MeterProvider,
+		TracerProvider:     otelProvs.TracerProvider,
 		ClientID:           "consumer-1",
 		FetchInterval:      200 * time.Millisecond,
 		StuckThreshold:     2 * time.Minute,
@@ -116,8 +115,8 @@ func main() {
 	c2, err := consumer.New(consumer.Config{
 		Pool:               db,
 		Logger:             logger.With("component", "consumer-2"),
-		MeterProvider:      otel.MeterProvider,
-		TracerProvider:     otel.TracerProvider,
+		MeterProvider:      otelProvs.MeterProvider,
+		TracerProvider:     otelProvs.TracerProvider,
 		ClientID:           "consumer-2",
 		DisableMaintenance: true,
 		FetchInterval:      200 * time.Millisecond,

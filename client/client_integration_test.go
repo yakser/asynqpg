@@ -14,8 +14,8 @@ import (
 	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/client"
 	"github.com/yakser/asynqpg/internal/lib/db"
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 	"github.com/yakser/asynqpg/internal/repository"
+	"github.com/yakser/asynqpg/testutils"
 )
 
 func setupClient(t *testing.T) (*client.Client, *repository.Repository) {

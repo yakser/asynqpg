@@ -18,8 +18,8 @@ import (
 	"github.com/yakser/asynqpg/client"
 	"github.com/yakser/asynqpg/consumer"
 	"github.com/yakser/asynqpg/internal/lib/ptr"
-	"github.com/yakser/asynqpg/internal/lib/testutils"
 	"github.com/yakser/asynqpg/producer"
+	"github.com/yakser/asynqpg/testutils"
 )
 
 func TestObservability_EnqueueMetrics(t *testing.T) {
