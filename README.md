@@ -659,7 +659,7 @@ guidelines.
 
 ## TODO
 
-- [ ] Move `asynqpgtest` to a separate module to avoid pulling `testcontainers-go` into consumer projects
+- [ ] Move `testutils` to a separate module to avoid pulling `testcontainers-go` into consumer projects
 
 ## Project Status
 
