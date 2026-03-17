@@ -9,7 +9,7 @@ require (
 	github.com/yakser/asynqpg v0.0.0
 	github.com/yakser/asynqpg/ui v0.0.0
 	go.opentelemetry.io/otel v1.42.0
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.40.0
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.42.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.42.0
 	go.opentelemetry.io/otel/sdk v1.42.0
 	go.opentelemetry.io/otel/sdk/metric v1.42.0
