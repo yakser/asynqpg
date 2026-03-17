@@ -18,6 +18,9 @@ jobs:
         with:
           go-version: "1.25"
 
+      - name: Set up Go workspace
+        run: go work init . ./ui
+
       - name: Create frontend placeholder
         run: make fake-assets
 
@@ -38,6 +41,9 @@ jobs:
         with:
           go-version: "1.25"
 
+      - name: Set up Go workspace
+        run: go work init . ./ui
+
       - name: Create frontend placeholder
         run: make fake-assets
 
@@ -57,6 +63,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25"
+
+      - name: Set up Go workspace
+        run: go work init . ./ui
 
       - name: Create frontend placeholder for dist folder
         run: make fake-assets
