@@ -6,7 +6,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.11.2
 	github.com/stretchr/testify v1.11.1
-	github.com/yakser/asynqpg v0.1.1
+	github.com/yakser/asynqpg v0.0.0
 )
 
 require (
@@ -65,3 +65,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260311181403-84a4fc48630c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/yakser/asynqpg => ../
