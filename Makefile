@@ -80,3 +80,11 @@ build-frontend: ## Build frontend SPA (requires Node.js + npm)
 .PHONY: dev-frontend
 dev-frontend: ## Start Vite dev server (HMR)
 	cd ui/frontend && npm run dev
+
+.PHONY: release-core
+release-core: ## Release core module (usage: make release-core V=v0.5.0)
+	python3 scripts/release.py core $(V)
+
+.PHONY: release-ui
+release-ui: ## Release UI module (usage: make release-ui V=v0.1.0)
+	python3 scripts/release.py ui $(V)
