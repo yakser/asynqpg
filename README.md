@@ -22,6 +22,7 @@ Distributed task queue for Go, backed by PostgreSQL.
 - [Performance](#performance)
 - [Testing](#testing)
 - [Contributing](#contributing)
+- [Support](#support)
 - [Project Status](#project-status)
 - [License](#license)
 
@@ -96,7 +97,7 @@ func main() {
 
     payload, _ := json.Marshal(map[string]string{"to": "user@example.com", "subject": "Hello"})
 
-    err = p.Enqueue(context.Background(), asynqpg.NewTask("email:send", payload,
+    _, err = p.Enqueue(context.Background(), asynqpg.NewTask("email:send", payload,
         asynqpg.WithMaxRetry(5),
         asynqpg.WithDelay(10*time.Second),
     ))
@@ -137,7 +138,7 @@ func main() {
         log.Fatal(err)
     }
 
-    c.RegisterTaskHandler("email:send",
+    if err := c.RegisterTaskHandler("email:send",
         consumer.TaskHandlerFunc(func(ctx context.Context, task *asynqpg.TaskInfo) error {
             fmt.Printf("Processing task %d: %s\n", task.ID, task.Type)
             // process task...
@@ -145,7 +146,9 @@ func main() {
         }),
         consumer.WithWorkersCount(5),
         consumer.WithTimeout(30*time.Second),
-    )
+    ); err != nil {
+        log.Fatal(err)
+    }
 
     if err := c.Start(); err != nil {
         log.Fatal(err)
@@ -155,7 +158,9 @@ func main() {
     signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
     <-sigCh
 
-    c.Stop()
+    if err := c.Stop(); err != nil {
+        log.Printf("shutdown error: %v", err)
+    }
 }
 ```
 
@@ -244,10 +249,10 @@ p, err := producer.New(producer.Config{
 
 ```go
 // Single task
-p.Enqueue(ctx, task)
+id, err := p.Enqueue(ctx, task)
 
 // Within an existing transaction (atomic with your business logic)
-p.EnqueueTx(ctx, tx, task)
+id, err = p.EnqueueTx(ctx, tx, task)
 
 // Batch enqueue (auto-chunks at 5000, skips duplicates by idempotency token)
 ids, err := p.EnqueueMany(ctx, tasks)
@@ -264,6 +269,10 @@ asynqpg.NewTask("type", payload,
     asynqpg.WithDelay(10*time.Second),              // delay before first processing
     asynqpg.WithIdempotencyToken("unique-token"),   // deduplicate enqueues
 )
+
+// Schedule a task for a specific time
+task := asynqpg.NewTask("report:generate", payload)
+task.ProcessAt = time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 ```
 
 ## Consumer
@@ -290,7 +299,7 @@ c, err := consumer.New(consumer.Config{
 ### Handler Registration
 
 ```go
-c.RegisterTaskHandler("email:send", handler,
+err := c.RegisterTaskHandler("email:send", handler,
     consumer.WithWorkersCount(10),          // goroutines for this task type
     consumer.WithMaxAttempts(5),            // override default
     consumer.WithTimeout(30*time.Second),   // per-task execution timeout
@@ -435,7 +444,7 @@ The consumer supports composable middleware for cross-cutting concerns. Middlewa
 ```go
 c, _ := consumer.New(config)
 
-c.Use(func(next consumer.TaskHandler) consumer.TaskHandler {
+_ = c.Use(func(next consumer.TaskHandler) consumer.TaskHandler {
     return consumer.TaskHandlerFunc(func(ctx context.Context, task *asynqpg.TaskInfo) error {
         slog.Info("processing task", "type", task.Type, "id", task.ID)
         err := next.Handle(ctx, task)
@@ -484,9 +493,9 @@ result, err := cl.ListTasks(ctx, client.NewListParams().
 // result.Tasks, result.Total
 
 // Manage tasks
-cl.CancelTask(ctx, id)   // pending/failed → cancelled
-cl.RetryTask(ctx, id)     // failed/cancelled → pending
-cl.DeleteTask(ctx, id)    // remove from database
+_, err = cl.CancelTask(ctx, id)   // pending/failed → cancelled
+_, err = cl.RetryTask(ctx, id)    // failed/cancelled → pending
+_, err = cl.DeleteTask(ctx, id)   // remove from database
 ```
 
 All methods have `*Tx` variants for transactional use.
@@ -604,41 +613,11 @@ make demo-down  # stop all services
 
 ## Performance
 
-The library includes comprehensive benchmarks covering SQL-level operations, batch completion, producer throughput, and end-to-end consumer processing.
-
-### Running Benchmarks
+The library includes Go benchmarks covering SQL-level operations, batch completion, producer throughput, and consumer processing.
 
 ```bash
-# Go benchmark tests (uses testcontainers, no manual setup)
-make bench
-
-# Standalone load test (requires a running PostgreSQL instance)
-go run ./cmd/bench --dsn="postgres://user:pass@localhost:5432/db?sslmode=disable" --scenario=all
-
-# Run specific scenario
-go run ./cmd/bench --dsn="..." --scenario=e2e --num-tasks=200000 --workers=16 --output=json
+make bench   # Run benchmarks (uses testcontainers, requires Docker)
 ```
-
-### Benchmark Scenarios
-
-| Scenario | Description |
-|----------|-------------|
-| `throughput` | Pure enqueue speed (batch insert, no consumer) |
-| `e2e` | Full lifecycle: enqueue, process, complete |
-| `scaling` | E2E at worker counts 1-64, produces scaling curve |
-| `crash-recovery` | Stop consumer at 50%, restart, verify zero task loss |
-| `retry-storm` | 100% fail first attempt, 50% second – throughput under pressure |
-| `queue-depth` | E2E with pre-existing 1K-100K tasks, tests index performance |
-
-### Reliability Tests
-
-Integration tests verify correctness under adverse conditions:
-
-- **Crash recovery** – consumer crash at 50% progress, new consumer completes all tasks
-- **Leader failover** – leader stops, follower takes over maintenance within election interval
-- **Multi-consumer no-loss** – 4 concurrent consumers process 50K tasks with zero duplicates or losses
-
-See [`benchmarks/README.md`](benchmarks/README.md) for methodology and comparison notes.
 
 ## Testing
 
@@ -656,6 +635,10 @@ Contributions are welcome, including bug reports, feature requests,
 documentation improvements, and code changes. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
 for local setup, contribution workflow, testing expectations, and pull request
 guidelines.
+
+## Support
+
+- **Bug reports & feature requests**: [GitHub Issues](https://github.com/yakser/asynqpg/issues)
 
 ## TODO
 
