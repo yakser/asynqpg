@@ -252,6 +252,7 @@ func TestEnqueueTx(t *testing.T) {
 		for _, token := range tokens {
 			_, err = p.EnqueueTx(ctx, tx, &asynqpg.Task{
 				Type:             "multi-task",
+				Payload:          []byte(``),
 				IdempotencyToken: ptr.Get(token),
 			})
 			require.NoError(t, err)
@@ -285,6 +286,7 @@ func TestEnqueueTx(t *testing.T) {
 		token := "atomicity-test-" + t.Name()
 		_, err = p.EnqueueTx(ctx, tx, &asynqpg.Task{
 			Type:             "process-order",
+			Payload:          []byte(``),
 			IdempotencyToken: ptr.Get(token),
 		})
 		require.NoError(t, err)
@@ -323,6 +325,7 @@ func TestEnqueueTx(t *testing.T) {
 		_, err = p.EnqueueTx(ctx, tx, &asynqpg.Task{
 			Type:             "process-order",
 			IdempotencyToken: ptr.Get(token),
+			Payload:          []byte(``),
 		})
 		require.NoError(t, err)
 
@@ -397,6 +400,7 @@ func TestEnqueueTx(t *testing.T) {
 			Type:             "delayed-task",
 			IdempotencyToken: ptr.Get(token),
 			Delay:            delay,
+			Payload:          []byte(``),
 		})
 		require.NoError(t, err)
 
