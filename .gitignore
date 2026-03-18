@@ -88,8 +88,9 @@ config.local.json
 # Docker volumes
 docker-data/
 
-# Python venv
+# Python
 .venv
+__pycache__/
 
 # Frontend node_modules (dist/ must stay committed for go:embed)
 ui/frontend/node_modules/

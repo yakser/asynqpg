@@ -127,6 +127,46 @@ the API shape second.
 - Add tests for new behavior and bug fixes.
 - Update documentation when the public API or workflow changes.
 
+## Release Process
+
+Releases are managed via `scripts/release.py` and automated through GitHub
+Actions. Only maintainers create releases.
+
+### Versioning
+
+The repository uses [Semantic Versioning](https://semver.org/). Core and UI
+modules are versioned independently with prefixed git tags:
+
+- Core: `v0.5.0` -- `github.com/yakser/asynqpg@v0.5.0`
+- UI: `ui/v0.1.0` -- `github.com/yakser/asynqpg/ui@v0.1.0`
+
+### Creating a release
+
+```bash
+# Core module
+make release-core V=v0.5.0
+git push origin master --tags
+
+# UI module (uses latest core tag by default)
+make release-ui V=v0.1.0
+git push origin master --tags
+
+# UI module pinned to a specific core version
+python3 scripts/release.py ui v0.1.0 --core-version v0.4.0
+git push origin master --tags
+```
+
+When releasing both modules, always release core first and push before releasing
+UI, so the Go module proxy can index the new core version.
+
+The release workflow (`.github/workflows/release.yml`) runs on tag push and
+automatically:
+
+1. Runs the full test suite as a final gate
+2. Generates a changelog from Conventional Commits using git-cliff
+3. Creates a GitHub Release
+4. Warms the Go module proxy cache
+
 ## Getting Help
 
 If you have a question, open an issue and use the `question` label, or start a

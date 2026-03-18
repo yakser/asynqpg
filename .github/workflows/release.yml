@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.*"
+      - "ui/v[0-9]+.*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+
+      - name: Set up Go workspace
+        run: go work init . ./ui
+
+      - name: Create frontend placeholder
+        run: make fake-assets
+
+      - name: Run unit tests (root)
+        run: go test -race -count=1 ./...
+
+      - name: Run unit tests (ui)
+        working-directory: ui
+        run: go test -race -count=1 ./...
+
+      - name: Run integration tests (root)
+        run: go test -race -count=1 -tags=integration ./...
+
+      - name: Run integration tests (ui)
+        working-directory: ui
+        run: go test -race -count=1 -tags=integration ./...
+
+  release:
+    name: Create GitHub Release
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine module and version
+        id: meta
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" == ui/* ]]; then
+            echo "module=ui" >> "$GITHUB_OUTPUT"
+            echo "version=${TAG#ui/}" >> "$GITHUB_OUTPUT"
+            echo "title=asynqpg/ui ${TAG#ui/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "module=core" >> "$GITHUB_OUTPUT"
+            echo "version=$TAG" >> "$GITHUB_OUTPUT"
+            echo "title=asynqpg $TAG" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        id: changelog
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGELOG_RELEASE.md
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.meta.outputs.title }}
+          body_path: CHANGELOG_RELEASE.md
+          tag_name: ${{ steps.meta.outputs.tag }}
+          prerelease: ${{ startsWith(steps.meta.outputs.version, 'v0.') }}
+
+  proxy-warmup:
+    name: Warm Go module proxy
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine module path
+        id: mod
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" == ui/* ]]; then
+            VERSION="${TAG#ui/}"
+            echo "path=github.com/yakser/asynqpg/ui@$VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=github.com/yakser/asynqpg@$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+
+      - name: Request module from proxy
+        run: GONOSUMCHECK=* go install ${{ steps.mod.outputs.path }} || true
+        env:
+          GOPROXY: https://proxy.golang.org
