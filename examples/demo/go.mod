@@ -2,6 +2,8 @@ module github.com/yakser/asynqpg/examples/demo
 
 go 1.25.0
 
+toolchain go1.25.7
+
 require (
 	github.com/google/uuid v1.6.0
 	github.com/jmoiron/sqlx v1.4.0

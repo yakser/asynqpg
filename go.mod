@@ -2,6 +2,8 @@ module github.com/yakser/asynqpg
 
 go 1.25.0
 
+toolchain go1.25.7
+
 require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx v3.6.2+incompatible
