@@ -7,16 +7,27 @@ on:
     branches: [master]
   workflow_dispatch:
 
+env:
+  # The special value "local" tells Go to use the bundled Go version rather
+  # than trying to fetch one according to a `toolchain` value in `go.mod`.
+  # This ensures that we're really running the Go version in the CI matrix
+  # rather than one that the Go command has upgraded to automatically.
+  GOTOOLCHAIN: local
+
 jobs:
   unit-tests:
-    name: Unit Tests
+    name: Unit tests (go ${{ matrix.go-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ["1.25", "1.26"]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: ${{ matrix.go-version }}
 
       - name: Set up Go workspace
         run: go work init . ./ui
@@ -39,7 +50,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "stable"
 
       - name: Set up Go workspace
         run: go work init . ./ui
@@ -54,15 +65,19 @@ jobs:
         run: golangci-lint run ./...
 
   integration-tests:
-    name: Integration Tests
+    name: Integration tests (go ${{ matrix.go-version }})
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ["1.25", "1.26"]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: ${{ matrix.go-version }}
 
       - name: Set up Go workspace
         run: go work init . ./ui
