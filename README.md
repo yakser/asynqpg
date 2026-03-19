@@ -29,25 +29,16 @@ Distributed task queue for Go, backed by PostgreSQL.
 ## Features
 
 - **PostgreSQL-native** – no Redis or external broker required
-- **Concurrent processing** – `FOR NO KEY UPDATE SKIP LOCKED` for safe multi-consumer operation
-- **Configurable retry** – exponential backoff (default) or constant delay, per-task max retries
-- **SkipRetry** – sentinel error to immediately fail non-retryable tasks
-- **Snooze** – reschedule tasks with `TaskSnooze` (free) or `TaskSnoozeWithError` (counts as attempt)
-- **Context utilities** – extract task ID, retry count, and max retry from handler context
-- **Delayed tasks** – schedule tasks to run at a future time
-- **Idempotent enqueue** – deduplicate tasks via idempotency tokens
-- **Batch enqueue** – insert thousands of tasks efficiently with auto-chunking
-- **Transactional enqueue** – enqueue tasks within your existing database transaction
+- **Safe concurrent processing** – multiple consumers with no duplicate work
+- **Flexible retries** – exponential or constant backoff, skip retry, reschedule for later
+- **Delayed & scheduled tasks** – run tasks at a future time
+- **Batch & transactional enqueue** – bulk insert with deduplication, enqueue within your DB transaction
 - **Per-type worker pools** – independent concurrency and timeout settings per task type
-- **Leader election** – PostgreSQL advisory locks for single-leader maintenance
-- **Automatic maintenance** – rescues stuck tasks, cleans up old completed/failed tasks
-- **Batch completion** – batches DB writes for high-throughput workloads
-- **Web dashboard** – React SPA with task inspection, filtering, retry/cancel/delete
-- **Auth** – BasicAuth or OAuth (GitHub, etc.) for the web UI
+- **Automatic maintenance** – leader election, stuck task rescue, old task cleanup
+- **Web dashboard** – Web UI with task inspection, filtering, retry/cancel/delete, and auth (Basic/OAuth)
 - **OpenTelemetry** – built-in metrics and distributed tracing
 
 ## Installation
-
 ```bash
 go get github.com/yakser/asynqpg
 ```
