@@ -4,6 +4,7 @@ package producer_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -548,6 +549,30 @@ func TestEnqueueMany(t *testing.T) {
 		task2, err := testutils.GetTaskByIdempotencyToken(t, db, token2)
 		require.NoError(t, err)
 		assert.Equal(t, 3, task2.AttemptsLeft)
+	})
+
+	t.Run("large batch without chunking", func(t *testing.T) {
+		db := testutils.SetupTestDatabase(t)
+		p, err := producer.New(producer.Config{Pool: db})
+		require.NoError(t, err)
+
+		const batchSize = 10000
+		tasks := make([]*asynqpg.Task, batchSize)
+		for i := range tasks {
+			tasks[i] = &asynqpg.Task{
+				Type:    "large-batch-task",
+				Payload: []byte(fmt.Sprintf(`{"id":%d}`, i)),
+			}
+		}
+
+		ids, err := p.EnqueueMany(t.Context(), tasks)
+		require.NoError(t, err)
+		assert.Len(t, ids, batchSize)
+
+		var count int
+		err = db.Get(&count, "SELECT COUNT(*) FROM asynqpg_tasks WHERE type = 'large-batch-task'")
+		require.NoError(t, err)
+		assert.Equal(t, batchSize, count)
 	})
 }
 

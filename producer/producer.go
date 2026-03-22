@@ -215,9 +215,14 @@ func (p *Producer) EnqueueTx(ctx context.Context, tx asynqpg.Querier, task *asyn
 	return id, nil
 }
 
-// EnqueueMany enqueues multiple tasks in a single batch operation.
-// Returns the IDs of inserted tasks. Duplicate tasks (by idempotency token) are skipped.
-// For very large batches (>5000 tasks), tasks are automatically chunked.
+// EnqueueMany enqueues multiple tasks in a single SQL call using UNNEST-based
+// batch insert. Returns the IDs of inserted tasks; duplicates (by idempotency
+// token) are skipped.
+//
+// No automatic batch splitting is performed. The UNNEST approach uses one array
+// parameter per column, so the PostgreSQL 65535 query parameter
+// limit does not apply. However, very large batches (100k+) may hit other limits
+// such as memory pressure, wire protocol message size, or statement timeouts.
 func (p *Producer) EnqueueMany(ctx context.Context, tasks []*asynqpg.Task) ([]int64, error) {
 	if len(tasks) == 0 {
 		return nil, nil
@@ -236,46 +241,21 @@ func (p *Producer) EnqueueMany(ctx context.Context, tasks []*asynqpg.Task) ([]in
 
 	start := time.Now()
 
-	// todo: use slices.Chunk?
-	// Chunk large batches
-	const maxBatchSize = 5000
-	if len(tasks) <= maxBatchSize {
-		ids, err := p.enqueueBatch(ctx, tasks)
-		if err != nil {
-			// todo: helper func for span set status err
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "batch enqueue failed")
-			return ids, err
-		}
-		p.recordBatchMetrics(ctx, tasks, time.Since(start))
-		return ids, nil
-	}
-
-	var allIDs []int64
-	for i := 0; i < len(tasks); i += maxBatchSize {
-		end := i + maxBatchSize
-		if end > len(tasks) {
-			end = len(tasks)
-		}
-		chunk := tasks[i:end]
-
-		ids, err := p.enqueueBatch(ctx, chunk)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "batch enqueue failed")
-			return allIDs, fmt.Errorf("chunk starting at index %d: %w", i, err)
-		}
-		allIDs = append(allIDs, ids...)
+	ids, err := p.enqueueBatch(ctx, tasks)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "batch enqueue failed")
+		return nil, err
 	}
 
 	p.recordBatchMetrics(ctx, tasks, time.Since(start))
 
 	p.logger.Info("batch enqueue completed",
 		"total_tasks", len(tasks),
-		"inserted", len(allIDs),
+		"inserted", len(ids),
 	)
 
-	return allIDs, nil
+	return ids, nil
 }
 
 func (p *Producer) recordBatchMetrics(ctx context.Context, tasks []*asynqpg.Task, dur time.Duration) {
@@ -364,8 +344,6 @@ func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks 
 
 	return ids, nil
 }
-
-// todo: add enqueue option to enqueue many methods, add enqueue option with max batch size for auto-chunking
 
 // EnqueueOption configures enqueue behavior.
 // Reserved for future use (e.g., queue selection, priority, tags).
