@@ -254,6 +254,7 @@ id, err := p.Enqueue(ctx, task)
 // Within an existing transaction (atomic with your business logic)
 id, err = p.EnqueueTx(ctx, tx, task)
 
+//fixme auto-chunks
 // Batch enqueue (auto-chunks at 5000, skips duplicates by idempotency token)
 ids, err := p.EnqueueMany(ctx, tasks)
 

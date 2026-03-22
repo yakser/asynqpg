@@ -37,7 +37,7 @@ func createPendingTask(t *testing.T, repo *repository.Repository, taskType strin
 	tasks := []repository.PushTaskParams{
 		{Type: taskType, Payload: []byte(`{"test":true}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
 	}
-	ids, err := repo.PushTasksMany(ctx, repository.PushTasksManyParams{Tasks: tasks})
+	ids, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
 	require.Len(t, ids, 1)
 	return ids[0]
@@ -369,7 +369,7 @@ func TestRetryTask_ExhaustedAttempts(t *testing.T) {
 	tasks := []repository.PushTaskParams{
 		{Type: "retry-exhausted-test", Payload: []byte(`{}`), AttemptsLeft: 1, Delay: db.NewDuration(0)},
 	}
-	ids, err := repo.PushTasksMany(ctx, repository.PushTasksManyParams{Tasks: tasks})
+	ids, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
 	id := ids[0]
 

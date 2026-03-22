@@ -19,10 +19,10 @@ type mockProducerRepo struct {
 	pushTaskErr      error
 	pushTxCalls      []*repository.PushTaskParams
 	pushTxErr        error
-	pushManyCalls    []repository.PushTasksManyParams
+	pushManyCalls    []repository.PushTasksParams
 	pushManyResult   []int64
 	pushManyErr      error
-	pushManyTxCalls  []repository.PushTasksManyParams
+	pushManyTxCalls  []repository.PushTasksParams
 	pushManyTxResult []int64
 	pushManyTxErr    error
 }
@@ -37,12 +37,12 @@ func (m *mockProducerRepo) PushTaskWithExecutor(_ context.Context, _ asynqpg.Que
 	return int64(len(m.pushTxCalls)), m.pushTxErr
 }
 
-func (m *mockProducerRepo) PushTasksMany(_ context.Context, params repository.PushTasksManyParams) ([]int64, error) {
+func (m *mockProducerRepo) PushTasks(_ context.Context, params repository.PushTasksParams) ([]int64, error) {
 	m.pushManyCalls = append(m.pushManyCalls, params)
 	return m.pushManyResult, m.pushManyErr
 }
 
-func (m *mockProducerRepo) PushTasksManyWithExecutor(_ context.Context, _ repository.SelectExecutor, params repository.PushTasksManyParams) ([]int64, error) {
+func (m *mockProducerRepo) PushTasksWithExecutor(_ context.Context, _ asynqpg.Querier, params repository.PushTasksParams) ([]int64, error) {
 	m.pushManyTxCalls = append(m.pushManyTxCalls, params)
 	return m.pushManyTxResult, m.pushManyTxErr
 }
@@ -351,7 +351,7 @@ func TestEnqueueMany_Success(t *testing.T) {
 	}
 
 	if len(repo.pushManyCalls) != 1 {
-		t.Fatalf("expected 1 PushTasksMany call, got %d", len(repo.pushManyCalls))
+		t.Fatalf("expected 1 PushTasks call, got %d", len(repo.pushManyCalls))
 	}
 	if len(repo.pushManyCalls[0].Tasks) != 3 {
 		t.Fatalf("expected 3 tasks in batch, got %d", len(repo.pushManyCalls[0].Tasks))
@@ -453,7 +453,7 @@ func TestEnqueueMany_Chunking(t *testing.T) {
 
 	_ = callCount
 	if len(chunkRepo.calls) != 2 {
-		t.Fatalf("expected 2 PushTasksMany calls (chunking), got %d", len(chunkRepo.calls))
+		t.Fatalf("expected 2 PushTasks calls (chunking), got %d", len(chunkRepo.calls))
 	}
 	if len(chunkRepo.calls[0].Tasks) != 5000 {
 		t.Fatalf("first chunk: expected 5000 tasks, got %d", len(chunkRepo.calls[0].Tasks))
@@ -622,7 +622,7 @@ func TestCalculateMaxRetry_ExplicitZero(t *testing.T) {
 // --- Chunking Mock ---
 
 type chunkingMockRepo struct {
-	calls  []repository.PushTasksManyParams
+	calls  []repository.PushTasksParams
 	chunks [][]int64
 }
 
@@ -634,7 +634,7 @@ func (m *chunkingMockRepo) PushTaskWithExecutor(_ context.Context, _ asynqpg.Que
 	return 0, nil
 }
 
-func (m *chunkingMockRepo) PushTasksMany(_ context.Context, params repository.PushTasksManyParams) ([]int64, error) {
+func (m *chunkingMockRepo) PushTasks(_ context.Context, params repository.PushTasksParams) ([]int64, error) {
 	idx := len(m.calls)
 	m.calls = append(m.calls, params)
 	if idx < len(m.chunks) {
@@ -643,6 +643,6 @@ func (m *chunkingMockRepo) PushTasksMany(_ context.Context, params repository.Pu
 	return nil, nil
 }
 
-func (m *chunkingMockRepo) PushTasksManyWithExecutor(_ context.Context, _ repository.SelectExecutor, params repository.PushTasksManyParams) ([]int64, error) {
+func (m *chunkingMockRepo) PushTasksWithExecutor(_ context.Context, _ asynqpg.Querier, params repository.PushTasksParams) ([]int64, error) {
 	return nil, nil
 }

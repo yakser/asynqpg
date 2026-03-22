@@ -2,6 +2,7 @@ package producer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -20,8 +21,8 @@ import (
 type producerRepo interface {
 	PushTask(ctx context.Context, task *repository.PushTaskParams) (int64, error)
 	PushTaskWithExecutor(ctx context.Context, exec asynqpg.Querier, task *repository.PushTaskParams) (int64, error)
-	PushTasksMany(ctx context.Context, params repository.PushTasksManyParams) ([]int64, error)
-	PushTasksManyWithExecutor(ctx context.Context, exec repository.SelectExecutor, params repository.PushTasksManyParams) ([]int64, error)
+	PushTasks(ctx context.Context, params repository.PushTasksParams) ([]int64, error)
+	PushTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params repository.PushTasksParams) ([]int64, error)
 }
 
 type Producer struct {
@@ -66,25 +67,19 @@ func New(config Config) (*Producer, error) {
 }
 
 func (p *Producer) setDefaults() {
-	if p.defaultMaxRetry <= 0 {
-		p.defaultMaxRetry = 3
-	}
 	if p.logger == nil {
 		p.logger = slog.Default()
+	}
+
+	if p.defaultMaxRetry <= 0 {
+		p.defaultMaxRetry = 3
 	}
 }
 
 func (p *Producer) Enqueue(ctx context.Context, task *asynqpg.Task, opts ...EnqueueOption) (int64, error) {
-	if task == nil {
-		return 0, fmt.Errorf("task cannot be nil")
-	}
-
-	if task.Type == "" {
-		return 0, fmt.Errorf("task type cannot be empty")
-	}
-
-	if task.Payload == nil {
-		return 0, fmt.Errorf("task payload cannot be nil")
+	err := validateTask(task)
+	if err != nil {
+		return 0, err
 	}
 
 	ctx, span := p.tracer.Start(ctx, "asynqpg.enqueue",
@@ -163,12 +158,9 @@ func (p *Producer) EnqueueTx(ctx context.Context, tx asynqpg.Querier, task *asyn
 		return 0, fmt.Errorf("executor cannot be nil")
 	}
 
-	if task == nil {
-		return 0, fmt.Errorf("task cannot be nil")
-	}
-
-	if task.Type == "" {
-		return 0, fmt.Errorf("task type cannot be empty")
+	err := validateTask(task)
+	if err != nil {
+		return 0, err
 	}
 
 	ctx, span := p.tracer.Start(ctx, "asynqpg.enqueue",
@@ -237,26 +229,20 @@ func (p *Producer) EnqueueMany(ctx context.Context, tasks []*asynqpg.Task) ([]in
 	)
 	defer span.End()
 
-	// Validate all tasks first
-	for i, task := range tasks {
-		if task == nil {
-			return nil, fmt.Errorf("task at index %d cannot be nil", i)
-		}
-		if task.Type == "" {
-			return nil, fmt.Errorf("task at index %d has empty type", i)
-		}
-		if task.Payload == nil {
-			return nil, fmt.Errorf("task at index %d has nil payload", i)
-		}
+	err := validateTasks(tasks)
+	if err != nil {
+		return nil, err
 	}
 
 	start := time.Now()
 
+	// todo: use slices.Chunk?
 	// Chunk large batches
 	const maxBatchSize = 5000
 	if len(tasks) <= maxBatchSize {
 		ids, err := p.enqueueBatch(ctx, tasks)
 		if err != nil {
+			// todo: helper func for span set status err
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "batch enqueue failed")
 			return ids, err
@@ -319,7 +305,7 @@ func (p *Producer) enqueueBatch(ctx context.Context, tasks []*asynqpg.Task) ([]i
 		}
 	}
 
-	ids, err := p.repo.PushTasksMany(ctx, repository.PushTasksManyParams{Tasks: repoParams})
+	ids, err := p.repo.PushTasks(ctx, repository.PushTasksParams{Tasks: repoParams})
 	if err != nil {
 		return nil, fmt.Errorf("batch insert tasks: %w", err)
 	}
@@ -338,17 +324,9 @@ func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks 
 		return nil, nil
 	}
 
-	// Validate all tasks first
-	for i, task := range tasks {
-		if task == nil {
-			return nil, fmt.Errorf("task at index %d cannot be nil", i)
-		}
-		if task.Type == "" {
-			return nil, fmt.Errorf("task at index %d has empty type", i)
-		}
-		if task.Payload == nil {
-			return nil, fmt.Errorf("task at index %d has nil payload", i)
-		}
+	err := validateTasks(tasks)
+	if err != nil {
+		return nil, err
 	}
 
 	repoParams := make([]repository.PushTaskParams, len(tasks))
@@ -366,7 +344,7 @@ func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks 
 	}
 
 	start := time.Now()
-	ids, err := p.repo.PushTasksManyWithExecutor(ctx, tx, repository.PushTasksManyParams{Tasks: repoParams})
+	ids, err := p.repo.PushTasksWithExecutor(ctx, tx, repository.PushTasksParams{Tasks: repoParams})
 	dur := time.Since(start)
 
 	if err != nil {
@@ -387,8 +365,37 @@ func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks 
 	return ids, nil
 }
 
+// todo: add enqueue option to enqueue many methods, add enqueue option with max batch size for auto-chunking
+
 // EnqueueOption configures enqueue behavior.
 // Reserved for future use (e.g., queue selection, priority, tags).
 type EnqueueOption func(*enqueueOptions)
 
 type enqueueOptions struct{}
+
+func validateTask(task *asynqpg.Task) error {
+	if task == nil {
+		return errors.New("task cannot be nil")
+	}
+
+	if task.Type == "" {
+		return errors.New("task type cannot be empty")
+	}
+
+	if task.Payload == nil {
+		return errors.New("task payload cannot be nil")
+	}
+
+	return nil
+}
+
+func validateTasks(tasks []*asynqpg.Task) error {
+	for i, task := range tasks {
+		err := validateTask(task)
+		if err != nil {
+			return fmt.Errorf("validate task at index %d: %w", i, err)
+		}
+	}
+
+	return nil
+}
