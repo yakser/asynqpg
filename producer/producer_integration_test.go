@@ -489,7 +489,7 @@ func TestEnqueueMany(t *testing.T) {
 
 		_, err = p.EnqueueMany(t.Context(), tasks)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "empty type")
+		assert.Contains(t, err.Error(), "task type cannot be empt")
 	})
 
 	t.Run("validates all tasks - rejects nil payload", func(t *testing.T) {
@@ -504,7 +504,7 @@ func TestEnqueueMany(t *testing.T) {
 
 		_, err = p.EnqueueMany(t.Context(), tasks)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "nil payload")
+		assert.Contains(t, err.Error(), " task payload cannot be nil")
 	})
 
 	t.Run("applies delay and max retry", func(t *testing.T) {

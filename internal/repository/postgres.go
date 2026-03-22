@@ -69,12 +69,12 @@ func (p *Repository) pushTaskInternal(ctx context.Context, exec asynqpg.Querier,
 	return id, nil
 }
 
-// PushTasksManyParams contains parameters for batch task insertion.
-type PushTasksManyParams struct {
+// PushTasksParams contains parameters for batch task insertion.
+type PushTasksParams struct {
 	Tasks []PushTaskParams
 }
 
-const pushTasksManyQuery = `
+const PushTasksQuery = `
 	INSERT INTO asynqpg_tasks (type, idempotency_token, payload, blocked_till, attempts_left)
 	SELECT
 		unnest($1::text[]),
@@ -86,9 +86,9 @@ const pushTasksManyQuery = `
 	RETURNING id
 `
 
-// PushTasksMany inserts multiple tasks in a single batch operation.
+// PushTasks inserts multiple tasks in a single batch operation.
 // Returns the IDs of inserted tasks. Uses ON CONFLICT DO NOTHING for idempotency.
-func (p *Repository) PushTasksMany(ctx context.Context, params PushTasksManyParams) ([]int64, error) {
+func (p *Repository) PushTasks(ctx context.Context, params PushTasksParams) ([]int64, error) {
 	if len(params.Tasks) == 0 {
 		return nil, nil
 	}
@@ -108,7 +108,7 @@ func (p *Repository) PushTasksMany(ctx context.Context, params PushTasksManyPara
 	}
 
 	var ids []int64
-	err := p.db.SelectContext(ctx, &ids, pushTasksManyQuery,
+	err := p.db.SelectContext(ctx, &ids, PushTasksQuery,
 		pq.Array(types),
 		pq.Array(tokens),
 		pq.Array(payloads),
@@ -122,13 +122,13 @@ func (p *Repository) PushTasksMany(ctx context.Context, params PushTasksManyPara
 	return ids, nil
 }
 
-// PushTasksManyWithExecutor inserts multiple tasks using provided executor (for transactions).
+// PushTasksWithExecutor inserts multiple tasks using provided executor (for transactions).
 // SelectExecutor is a minimal interface for batch insert operations.
 type SelectExecutor interface {
 	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
-func (p *Repository) PushTasksManyWithExecutor(ctx context.Context, exec SelectExecutor, params PushTasksManyParams) ([]int64, error) {
+func (p *Repository) PushTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params PushTasksParams) ([]int64, error) {
 	if len(params.Tasks) == 0 {
 		return nil, nil
 	}
@@ -148,7 +148,7 @@ func (p *Repository) PushTasksManyWithExecutor(ctx context.Context, exec SelectE
 	}
 
 	var ids []int64
-	err := exec.SelectContext(ctx, &ids, pushTasksManyQuery,
+	err := exec.SelectContext(ctx, &ids, PushTasksQuery,
 		pq.Array(types),
 		pq.Array(tokens),
 		pq.Array(payloads),

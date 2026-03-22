@@ -46,7 +46,7 @@ func createAndFetchTasks(t *testing.T, repo *repository.Repository, count int, t
 		}
 	}
 
-	_, err := repo.PushTasksMany(ctx, repository.PushTasksManyParams{Tasks: tasks})
+	_, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
 
 	readyTasks, err := repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
