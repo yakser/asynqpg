@@ -76,6 +76,10 @@ func (p *Producer) setDefaults() {
 	}
 }
 
+// Enqueue inserts a single task into the queue. Returns the database ID of the
+// inserted task. If the task has an idempotency token that already exists, it
+// returns 0 without error. Task delay is determined by ProcessAt (absolute) or
+// Delay (relative); max retry falls back to the producer's DefaultMaxRetry.
 func (p *Producer) Enqueue(ctx context.Context, task *asynqpg.Task, opts ...EnqueueOption) (int64, error) {
 	err := validateTask(task)
 	if err != nil {
@@ -90,8 +94,6 @@ func (p *Producer) Enqueue(ctx context.Context, task *asynqpg.Task, opts ...Enqu
 
 	delay := p.calculateDelay(task)
 	maxRetry := p.calculateMaxRetry(task)
-
-	span.SetAttributes(attribute.Bool("has_delay", delay > 0))
 
 	params := &repository.PushTaskParams{
 		Type:             task.Type,
@@ -132,30 +134,12 @@ func (p *Producer) Enqueue(ctx context.Context, task *asynqpg.Task, opts ...Enqu
 	return id, nil
 }
 
-func (p *Producer) calculateDelay(task *asynqpg.Task) time.Duration {
-	delay := task.Delay
-	if !task.ProcessAt.IsZero() {
-		delay = time.Until(task.ProcessAt)
-		if delay < 0 {
-			delay = 0
-		}
-	}
-	return delay
-}
-
-func (p *Producer) calculateMaxRetry(task *asynqpg.Task) int {
-	if task.MaxRetry != nil {
-		return *task.MaxRetry
-	}
-	return p.defaultMaxRetry
-}
-
-// EnqueueTx enqueues a task using the provided executor (typically a transaction).
-// This allows the task enqueue to be part of a larger transaction,
-// ensuring atomicity with other database operations.
+// EnqueueTx enqueues a task using the provided Querier (typically a
+// transaction). This allows the task enqueue to be part of a larger
+// transaction, ensuring atomicity with other database operations.
 func (p *Producer) EnqueueTx(ctx context.Context, tx asynqpg.Querier, task *asynqpg.Task, opts ...EnqueueOption) (int64, error) {
 	if tx == nil {
-		return 0, fmt.Errorf("executor cannot be nil")
+		return 0, fmt.Errorf("querier cannot be nil")
 	}
 
 	err := validateTask(task)
@@ -293,11 +277,13 @@ func (p *Producer) enqueueBatch(ctx context.Context, tasks []*asynqpg.Task) ([]i
 	return ids, nil
 }
 
-// EnqueueManyTx enqueues multiple tasks in a single batch operation using the provided executor.
-// This allows the batch enqueue to be part of a larger transaction.
+// EnqueueManyTx enqueues multiple tasks in a single batch operation using the
+// provided Querier (typically a transaction). This allows the batch enqueue to
+// be part of a larger transaction, ensuring atomicity with other database
+// operations.
 func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks []*asynqpg.Task) ([]int64, error) {
 	if tx == nil {
-		return nil, fmt.Errorf("executor cannot be nil")
+		return nil, fmt.Errorf("querier cannot be nil")
 	}
 
 	if len(tasks) == 0 {
@@ -343,6 +329,24 @@ func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks 
 	)
 
 	return ids, nil
+}
+
+func (p *Producer) calculateDelay(task *asynqpg.Task) time.Duration {
+	delay := task.Delay
+	if !task.ProcessAt.IsZero() {
+		delay = time.Until(task.ProcessAt)
+		if delay < 0 {
+			delay = 0
+		}
+	}
+	return delay
+}
+
+func (p *Producer) calculateMaxRetry(task *asynqpg.Task) int {
+	if task.MaxRetry != nil {
+		return *task.MaxRetry
+	}
+	return p.defaultMaxRetry
 }
 
 // EnqueueOption configures enqueue behavior.

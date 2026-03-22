@@ -351,7 +351,7 @@ func TestEnqueueTx(t *testing.T) {
 		_, err = p.EnqueueTx(context.Background(), nil, &asynqpg.Task{Type: "test"})
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "executor cannot be nil")
+		assert.Contains(t, err.Error(), "querier cannot be nil")
 	})
 
 	t.Run("returns error when task is nil", func(t *testing.T) {
@@ -646,7 +646,7 @@ func TestEnqueueManyTx(t *testing.T) {
 		_, err = p.EnqueueManyTx(context.Background(), nil, tasks)
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "executor cannot be nil")
+		assert.Contains(t, err.Error(), "querier cannot be nil")
 	})
 
 	t.Run("returns empty slice for empty input", func(t *testing.T) {
