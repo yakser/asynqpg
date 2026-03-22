@@ -345,8 +345,6 @@ func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks 
 	return ids, nil
 }
 
-// todo: add enqueue option to enqueue many methods, add enqueue option with max batch size for auto-chunking
-
 // EnqueueOption configures enqueue behavior.
 // Reserved for future use (e.g., queue selection, priority, tags).
 type EnqueueOption func(*enqueueOptions)
