@@ -20,9 +20,9 @@ import (
 
 type producerRepo interface {
 	PushTask(ctx context.Context, task *repository.PushTaskParams) (repository.PushTaskResult, error)
-	PushTaskWithExecutor(ctx context.Context, exec asynqpg.Querier, task *repository.PushTaskParams) (repository.PushTaskResult, error)
+	PushTaskWithTx(ctx context.Context, tx asynqpg.Tx, task *repository.PushTaskParams) (repository.PushTaskResult, error)
 	PushTasks(ctx context.Context, params repository.PushTasksParams) ([]repository.PushTaskResult, error)
-	PushTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params repository.PushTasksParams) ([]repository.PushTaskResult, error)
+	PushTasksWithTx(ctx context.Context, tx asynqpg.Tx, params repository.PushTasksParams) ([]repository.PushTaskResult, error)
 }
 
 // EnqueueResult contains the result of a single task enqueue operation.
@@ -169,12 +169,12 @@ func (p *Producer) Enqueue(ctx context.Context, task *asynqpg.Task, opts ...Enqu
 	return &EnqueueResult{ID: result.ID, Duplicate: result.Duplicate}, nil
 }
 
-// EnqueueTx enqueues a task using the provided Querier (typically a
-// transaction). This allows the task enqueue to be part of a larger
-// transaction, ensuring atomicity with other database operations.
-func (p *Producer) EnqueueTx(ctx context.Context, tx asynqpg.Querier, task *asynqpg.Task, opts ...EnqueueOption) (*EnqueueResult, error) {
+// EnqueueTx enqueues a task using the provided transaction. This allows the
+// task enqueue to be part of a larger transaction, ensuring atomicity with
+// other database operations.
+func (p *Producer) EnqueueTx(ctx context.Context, tx asynqpg.Tx, task *asynqpg.Task, opts ...EnqueueOption) (*EnqueueResult, error) {
 	if tx == nil {
-		return nil, fmt.Errorf("querier cannot be nil")
+		return nil, fmt.Errorf("tx cannot be nil")
 	}
 
 	err := validateTask(task)
@@ -200,7 +200,7 @@ func (p *Producer) EnqueueTx(ctx context.Context, tx asynqpg.Querier, task *asyn
 	}
 
 	start := time.Now()
-	result, err := p.repo.PushTaskWithExecutor(ctx, tx, params)
+	result, err := p.repo.PushTaskWithTx(ctx, tx, params)
 	dur := time.Since(start)
 
 	taskTypeAttr := asynqpg.AttrTaskType.String(task.Type)
@@ -334,12 +334,11 @@ func (p *Producer) enqueueBatch(ctx context.Context, tasks []*asynqpg.Task) ([]r
 }
 
 // EnqueueManyTx enqueues multiple tasks in a single batch operation using the
-// provided Querier (typically a transaction). This allows the batch enqueue to
-// be part of a larger transaction, ensuring atomicity with other database
-// operations.
-func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks []*asynqpg.Task) (*EnqueueManyResult, error) {
+// provided transaction. This allows the batch enqueue to be part of a larger
+// transaction, ensuring atomicity with other database operations.
+func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Tx, tasks []*asynqpg.Task) (*EnqueueManyResult, error) {
 	if tx == nil {
-		return nil, fmt.Errorf("querier cannot be nil")
+		return nil, fmt.Errorf("tx cannot be nil")
 	}
 
 	if len(tasks) == 0 {
@@ -366,7 +365,7 @@ func (p *Producer) EnqueueManyTx(ctx context.Context, tx asynqpg.Querier, tasks 
 	}
 
 	start := time.Now()
-	repoResults, err := p.repo.PushTasksWithExecutor(ctx, tx, repository.PushTasksParams{Tasks: repoParams})
+	repoResults, err := p.repo.PushTasksWithTx(ctx, tx, repository.PushTasksParams{Tasks: repoParams})
 	dur := time.Since(start)
 
 	if err != nil {

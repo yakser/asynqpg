@@ -48,10 +48,10 @@ func (c *Client) CancelTask(ctx context.Context, id int64) (*TaskInfo, error) {
 	return info, nil
 }
 
-// CancelTaskTx cancels a task using the provided executor (transaction).
-func (c *Client) CancelTaskTx(ctx context.Context, tx asynqpg.Querier, id int64) (*TaskInfo, error) {
+// CancelTaskTx cancels a task using the provided transaction.
+func (c *Client) CancelTaskTx(ctx context.Context, tx asynqpg.Tx, id int64) (*TaskInfo, error) {
 	if tx == nil {
-		return nil, fmt.Errorf("executor cannot be nil")
+		return nil, fmt.Errorf("tx cannot be nil")
 	}
 
 	ctx, span := c.tracer.Start(ctx, "asynqpg.cancel_task",
@@ -60,7 +60,7 @@ func (c *Client) CancelTaskTx(ctx context.Context, tx asynqpg.Querier, id int64)
 	)
 	defer span.End()
 
-	task, updated, err := c.repo.CancelTaskByIDWithExecutor(ctx, tx, id)
+	task, updated, err := c.repo.CancelTaskByIDWithTx(ctx, tx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTaskNotFound

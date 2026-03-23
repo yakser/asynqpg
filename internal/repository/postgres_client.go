@@ -68,12 +68,12 @@ func (r *ClientRepository) GetTaskByID(ctx context.Context, id int64) (*FullTask
 	return &task, nil
 }
 
-// GetTaskByIDWithExecutor returns a single task using the provided executor.
-func (r *ClientRepository) GetTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, error) {
+// GetTaskByIDWithTx returns a single task using the provided transaction.
+func (r *ClientRepository) GetTaskByIDWithTx(ctx context.Context, tx asynqpg.Tx, id int64) (*FullTask, error) {
 	query := fmt.Sprintf(`SELECT %s FROM asynqpg_tasks WHERE id = $1`, fullTaskColumns)
 
 	var task FullTask
-	err := exec.GetContext(ctx, &task, query, id)
+	err := tx.GetContext(ctx, &task, query, id)
 	if err != nil {
 		return nil, fmt.Errorf("get task by id: %w", err)
 	}
@@ -103,12 +103,12 @@ func (r *ClientRepository) ListTasks(ctx context.Context, params ListTasksParams
 	return r.listTasksInternal(ctx, r.db, params)
 }
 
-// ListTasksWithExecutor returns tasks matching the given filters using the provided executor.
-func (r *ClientRepository) ListTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params ListTasksParams) (*ListTasksResult, error) {
-	return r.listTasksInternal(ctx, exec, params)
+// ListTasksWithTx returns tasks matching the given filters using the provided transaction.
+func (r *ClientRepository) ListTasksWithTx(ctx context.Context, tx asynqpg.Tx, params ListTasksParams) (*ListTasksResult, error) {
+	return r.listTasksInternal(ctx, tx, params)
 }
 
-func (r *ClientRepository) listTasksInternal(ctx context.Context, exec asynqpg.Querier, params ListTasksParams) (*ListTasksResult, error) {
+func (r *ClientRepository) listTasksInternal(ctx context.Context, q asynqpg.Querier, params ListTasksParams) (*ListTasksResult, error) {
 	orderColumn := "id"
 	switch params.OrderBy {
 	case "created_at", "updated_at", "blocked_till":
@@ -144,7 +144,7 @@ func (r *ClientRepository) listTasksInternal(ctx context.Context, exec asynqpg.Q
 	}
 
 	var tasks []FullTask
-	err := exec.SelectContext(ctx, &tasks, query, statuses, types, ids, params.Limit, params.Offset)
+	err := q.SelectContext(ctx, &tasks, query, statuses, types, ids, params.Limit, params.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
 	}
@@ -156,7 +156,7 @@ func (r *ClientRepository) listTasksInternal(ctx context.Context, exec asynqpg.Q
 		  AND ($3::bigint[] IS NULL OR id = ANY($3))`
 
 	var total int
-	row := exec.QueryRowContext(ctx, countQuery, statuses, types, ids)
+	row := q.QueryRowContext(ctx, countQuery, statuses, types, ids)
 	if err := row.Scan(&total); err != nil {
 		return nil, fmt.Errorf("count tasks: %w", err)
 	}
@@ -174,12 +174,12 @@ func (r *ClientRepository) CancelTaskByID(ctx context.Context, id int64) (*FullT
 	return r.cancelTaskInternal(ctx, r.db, id)
 }
 
-// CancelTaskByIDWithExecutor cancels a task using the provided executor.
-func (r *ClientRepository) CancelTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
-	return r.cancelTaskInternal(ctx, exec, id)
+// CancelTaskByIDWithTx cancels a task using the provided transaction.
+func (r *ClientRepository) CancelTaskByIDWithTx(ctx context.Context, tx asynqpg.Tx, id int64) (*FullTask, bool, error) {
+	return r.cancelTaskInternal(ctx, tx, id)
 }
 
-func (r *ClientRepository) cancelTaskInternal(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
+func (r *ClientRepository) cancelTaskInternal(ctx context.Context, q asynqpg.Querier, id int64) (*FullTask, bool, error) {
 	query := fmt.Sprintf(`WITH locked_task AS (
 		SELECT id, status, finalized_at
 		FROM asynqpg_tasks WHERE id = $1 FOR UPDATE
@@ -201,7 +201,7 @@ func (r *ClientRepository) cancelTaskInternal(ctx context.Context, exec asynqpg.
 	WHERE lt.id NOT IN (SELECT id FROM updated_task)`, fullTaskColumns, fullTaskColumnsAliased)
 
 	var results []fullTaskWithFlag
-	err := exec.SelectContext(ctx, &results, query, id)
+	err := q.SelectContext(ctx, &results, query, id)
 	if err != nil {
 		return nil, false, fmt.Errorf("cancel task: %w", err)
 	}
@@ -220,12 +220,12 @@ func (r *ClientRepository) RetryTaskByID(ctx context.Context, id int64) (*FullTa
 	return r.retryTaskInternal(ctx, r.db, id)
 }
 
-// RetryTaskByIDWithExecutor retries a task using the provided executor.
-func (r *ClientRepository) RetryTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
-	return r.retryTaskInternal(ctx, exec, id)
+// RetryTaskByIDWithTx retries a task using the provided transaction.
+func (r *ClientRepository) RetryTaskByIDWithTx(ctx context.Context, tx asynqpg.Tx, id int64) (*FullTask, bool, error) {
+	return r.retryTaskInternal(ctx, tx, id)
 }
 
-func (r *ClientRepository) retryTaskInternal(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
+func (r *ClientRepository) retryTaskInternal(ctx context.Context, q asynqpg.Querier, id int64) (*FullTask, bool, error) {
 	query := fmt.Sprintf(`WITH locked_task AS (
 		SELECT id, status, attempts_left
 		FROM asynqpg_tasks WHERE id = $1 FOR UPDATE
@@ -250,7 +250,7 @@ func (r *ClientRepository) retryTaskInternal(ctx context.Context, exec asynqpg.Q
 	WHERE lt.id NOT IN (SELECT id FROM updated_task)`, fullTaskColumns, fullTaskColumnsAliased)
 
 	var results []fullTaskWithFlag
-	err := exec.SelectContext(ctx, &results, query, id)
+	err := q.SelectContext(ctx, &results, query, id)
 	if err != nil {
 		return nil, false, fmt.Errorf("retry task: %w", err)
 	}
@@ -268,12 +268,12 @@ func (r *ClientRepository) DeleteTaskByID(ctx context.Context, id int64) (*FullT
 	return r.deleteTaskInternal(ctx, r.db, id)
 }
 
-// DeleteTaskByIDWithExecutor deletes a task using the provided executor.
-func (r *ClientRepository) DeleteTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
-	return r.deleteTaskInternal(ctx, exec, id)
+// DeleteTaskByIDWithTx deletes a task using the provided transaction.
+func (r *ClientRepository) DeleteTaskByIDWithTx(ctx context.Context, tx asynqpg.Tx, id int64) (*FullTask, bool, error) {
+	return r.deleteTaskInternal(ctx, tx, id)
 }
 
-func (r *ClientRepository) deleteTaskInternal(ctx context.Context, exec asynqpg.Querier, id int64) (*FullTask, bool, error) {
+func (r *ClientRepository) deleteTaskInternal(ctx context.Context, q asynqpg.Querier, id int64) (*FullTask, bool, error) {
 	query := fmt.Sprintf(`WITH locked_task AS (
 		SELECT id, status FROM asynqpg_tasks WHERE id = $1 FOR UPDATE
 	),
@@ -291,7 +291,7 @@ func (r *ClientRepository) deleteTaskInternal(ctx context.Context, exec asynqpg.
 	WHERE lt.id NOT IN (SELECT id FROM deleted_task)`, fullTaskColumns, fullTaskColumnsAliased)
 
 	var results []fullTaskWithFlag
-	err := exec.SelectContext(ctx, &results, query, id)
+	err := q.SelectContext(ctx, &results, query, id)
 	if err != nil {
 		return nil, false, fmt.Errorf("delete task: %w", err)
 	}

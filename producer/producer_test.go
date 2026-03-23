@@ -37,7 +37,7 @@ func (m *mockProducerRepo) PushTask(_ context.Context, task *repository.PushTask
 	return m.pushTaskResult, m.pushTaskErr
 }
 
-func (m *mockProducerRepo) PushTaskWithExecutor(_ context.Context, _ asynqpg.Querier, task *repository.PushTaskParams) (repository.PushTaskResult, error) {
+func (m *mockProducerRepo) PushTaskWithTx(_ context.Context, _ asynqpg.Tx, task *repository.PushTaskParams) (repository.PushTaskResult, error) {
 	m.pushTxCalls = append(m.pushTxCalls, task)
 	if m.pushTxResult.ID == 0 && m.pushTxErr == nil {
 		return repository.PushTaskResult{ID: int64(len(m.pushTxCalls))}, nil
@@ -50,30 +50,32 @@ func (m *mockProducerRepo) PushTasks(_ context.Context, params repository.PushTa
 	return m.pushManyResult, m.pushManyErr
 }
 
-func (m *mockProducerRepo) PushTasksWithExecutor(_ context.Context, _ asynqpg.Querier, params repository.PushTasksParams) ([]repository.PushTaskResult, error) {
+func (m *mockProducerRepo) PushTasksWithTx(_ context.Context, _ asynqpg.Tx, params repository.PushTasksParams) ([]repository.PushTaskResult, error) {
 	m.pushManyTxCalls = append(m.pushManyTxCalls, params)
 	return m.pushManyTxResult, m.pushManyTxErr
 }
 
-// --- Mock Executor (satisfies asynqpg.Querier) ---
+// --- Mock Tx (satisfies asynqpg.Tx) ---
 
-type mockExecutor struct{}
+type mockTx struct{}
 
-func (m *mockExecutor) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, error) {
+func (m *mockTx) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, error) {
 	return nil, nil //nolint:nilnil
 }
-func (m *mockExecutor) SelectContext(_ context.Context, _ any, _ string, _ ...any) error {
+func (m *mockTx) SelectContext(_ context.Context, _ any, _ string, _ ...any) error {
 	return nil
 }
-func (m *mockExecutor) GetContext(_ context.Context, _ any, _ string, _ ...any) error {
+func (m *mockTx) GetContext(_ context.Context, _ any, _ string, _ ...any) error {
 	return nil
 }
-func (m *mockExecutor) QueryContext(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
+func (m *mockTx) QueryContext(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
 	return nil, nil //nolint:nilnil
 }
-func (m *mockExecutor) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Row {
+func (m *mockTx) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Row {
 	return nil
 }
+func (m *mockTx) Commit() error   { return nil }
+func (m *mockTx) Rollback() error { return nil }
 
 // newTestProducer creates a Producer with a mock repo.
 func newTestProducer(repo *mockProducerRepo) *Producer {
@@ -304,7 +306,7 @@ func TestEnqueueTx_Success(t *testing.T) {
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
-	_, err := p.EnqueueTx(context.Background(), &mockExecutor{}, &asynqpg.Task{
+	_, err := p.EnqueueTx(context.Background(), &mockTx{}, &asynqpg.Task{
 		Type:    "test",
 		Payload: []byte(`{}`),
 	})
@@ -313,24 +315,24 @@ func TestEnqueueTx_Success(t *testing.T) {
 	}
 
 	if len(repo.pushTxCalls) != 1 {
-		t.Fatalf("expected 1 PushTaskWithExecutor call, got %d", len(repo.pushTxCalls))
+		t.Fatalf("expected 1 PushTaskWithTx call, got %d", len(repo.pushTxCalls))
 	}
 }
 
-func TestEnqueueTx_NilExecutor(t *testing.T) {
+func TestEnqueueTx_NilTx(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
 	_, err := p.EnqueueTx(context.Background(), nil, &asynqpg.Task{
 		Type:    "test",
 		Payload: []byte(`{}`),
 	})
 	if err == nil {
-		t.Fatal("expected error for nil executor")
+		t.Fatal("expected error for nil tx")
 	}
 }
 
 func TestEnqueueTx_NilTask(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
-	_, err := p.EnqueueTx(context.Background(), &mockExecutor{}, nil)
+	_, err := p.EnqueueTx(context.Background(), &mockTx{}, nil)
 	if err == nil {
 		t.Fatal("expected error for nil task")
 	}
@@ -338,7 +340,7 @@ func TestEnqueueTx_NilTask(t *testing.T) {
 
 func TestEnqueueTx_EmptyType(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
-	_, err := p.EnqueueTx(context.Background(), &mockExecutor{}, &asynqpg.Task{
+	_, err := p.EnqueueTx(context.Background(), &mockTx{}, &asynqpg.Task{
 		Type:    "",
 		Payload: []byte(`{}`),
 	})
@@ -351,7 +353,7 @@ func TestEnqueueTx_RepoError(t *testing.T) {
 	repo := &mockProducerRepo{pushTxErr: errors.New("tx error")}
 	p := newTestProducer(repo)
 
-	_, err := p.EnqueueTx(context.Background(), &mockExecutor{}, &asynqpg.Task{
+	_, err := p.EnqueueTx(context.Background(), &mockTx{}, &asynqpg.Task{
 		Type:    "test",
 		Payload: []byte(`{}`),
 	})
@@ -460,7 +462,7 @@ func TestEnqueueManyTx_Success(t *testing.T) {
 	}
 	p := newTestProducer(repo)
 
-	result, err := p.EnqueueManyTx(context.Background(), &mockExecutor{}, []*asynqpg.Task{
+	result, err := p.EnqueueManyTx(context.Background(), &mockTx{}, []*asynqpg.Task{
 		{Type: "test", Payload: []byte(`{"id":1}`)},
 		{Type: "test", Payload: []byte(`{"id":2}`)},
 	})
@@ -476,21 +478,21 @@ func TestEnqueueManyTx_Success(t *testing.T) {
 	}
 }
 
-func TestEnqueueManyTx_NilExecutor(t *testing.T) {
+func TestEnqueueManyTx_NilTx(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
 
 	_, err := p.EnqueueManyTx(context.Background(), nil, []*asynqpg.Task{
 		{Type: "test", Payload: []byte(`{}`)},
 	})
 	if err == nil {
-		t.Fatal("expected error for nil executor")
+		t.Fatal("expected error for nil tx")
 	}
 }
 
 func TestEnqueueManyTx_Empty(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
 
-	result, err := p.EnqueueManyTx(context.Background(), &mockExecutor{}, nil)
+	result, err := p.EnqueueManyTx(context.Background(), &mockTx{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -502,7 +504,7 @@ func TestEnqueueManyTx_Empty(t *testing.T) {
 func TestEnqueueManyTx_Validation(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
 
-	_, err := p.EnqueueManyTx(context.Background(), &mockExecutor{}, []*asynqpg.Task{
+	_, err := p.EnqueueManyTx(context.Background(), &mockTx{}, []*asynqpg.Task{
 		nil,
 	})
 	if err == nil {
@@ -514,7 +516,7 @@ func TestEnqueueManyTx_RepoError(t *testing.T) {
 	repo := &mockProducerRepo{pushManyTxErr: errors.New("tx batch error")}
 	p := newTestProducer(repo)
 
-	_, err := p.EnqueueManyTx(context.Background(), &mockExecutor{}, []*asynqpg.Task{
+	_, err := p.EnqueueManyTx(context.Background(), &mockTx{}, []*asynqpg.Task{
 		{Type: "test", Payload: []byte(`{}`)},
 	})
 	if err == nil {

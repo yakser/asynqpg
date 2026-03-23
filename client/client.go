@@ -18,15 +18,15 @@ import (
 // taskRepository defines the repository operations needed by Client.
 type taskRepository interface {
 	GetTaskByID(ctx context.Context, id int64) (*repository.FullTask, error)
-	GetTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*repository.FullTask, error)
+	GetTaskByIDWithTx(ctx context.Context, tx asynqpg.Tx, id int64) (*repository.FullTask, error)
 	ListTasks(ctx context.Context, params repository.ListTasksParams) (*repository.ListTasksResult, error)
-	ListTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params repository.ListTasksParams) (*repository.ListTasksResult, error)
+	ListTasksWithTx(ctx context.Context, tx asynqpg.Tx, params repository.ListTasksParams) (*repository.ListTasksResult, error)
 	CancelTaskByID(ctx context.Context, id int64) (*repository.FullTask, bool, error)
-	CancelTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*repository.FullTask, bool, error)
+	CancelTaskByIDWithTx(ctx context.Context, tx asynqpg.Tx, id int64) (*repository.FullTask, bool, error)
 	RetryTaskByID(ctx context.Context, id int64) (*repository.FullTask, bool, error)
-	RetryTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*repository.FullTask, bool, error)
+	RetryTaskByIDWithTx(ctx context.Context, tx asynqpg.Tx, id int64) (*repository.FullTask, bool, error)
 	DeleteTaskByID(ctx context.Context, id int64) (*repository.FullTask, bool, error)
-	DeleteTaskByIDWithExecutor(ctx context.Context, exec asynqpg.Querier, id int64) (*repository.FullTask, bool, error)
+	DeleteTaskByIDWithTx(ctx context.Context, tx asynqpg.Tx, id int64) (*repository.FullTask, bool, error)
 }
 
 // Client provides task management and inspection operations.
@@ -89,10 +89,10 @@ func (c *Client) GetTask(ctx context.Context, id int64) (*TaskInfo, error) {
 	return fullTaskToInfo(task), nil
 }
 
-// GetTaskTx returns the full information about a task using the provided executor.
-func (c *Client) GetTaskTx(ctx context.Context, tx asynqpg.Querier, id int64) (*TaskInfo, error) {
+// GetTaskTx returns the full information about a task using the provided transaction.
+func (c *Client) GetTaskTx(ctx context.Context, tx asynqpg.Tx, id int64) (*TaskInfo, error) {
 	if tx == nil {
-		return nil, fmt.Errorf("executor cannot be nil")
+		return nil, fmt.Errorf("tx cannot be nil")
 	}
 
 	ctx, span := c.tracer.Start(ctx, "asynqpg.get_task",
@@ -101,7 +101,7 @@ func (c *Client) GetTaskTx(ctx context.Context, tx asynqpg.Querier, id int64) (*
 	)
 	defer span.End()
 
-	task, err := c.repo.GetTaskByIDWithExecutor(ctx, tx, id)
+	task, err := c.repo.GetTaskByIDWithTx(ctx, tx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTaskNotFound
@@ -138,10 +138,10 @@ func (c *Client) ListTasks(ctx context.Context, params *ListParams) (*ListResult
 	return repoResultToListResult(result), nil
 }
 
-// ListTasksTx returns tasks matching the given filters using the provided executor.
-func (c *Client) ListTasksTx(ctx context.Context, tx asynqpg.Querier, params *ListParams) (*ListResult, error) {
+// ListTasksTx returns tasks matching the given filters using the provided transaction.
+func (c *Client) ListTasksTx(ctx context.Context, tx asynqpg.Tx, params *ListParams) (*ListResult, error) {
 	if tx == nil {
-		return nil, fmt.Errorf("executor cannot be nil")
+		return nil, fmt.Errorf("tx cannot be nil")
 	}
 
 	if params == nil {
@@ -155,7 +155,7 @@ func (c *Client) ListTasksTx(ctx context.Context, tx asynqpg.Querier, params *Li
 
 	repoParams := params.toRepoParams()
 
-	result, err := c.repo.ListTasksWithExecutor(ctx, tx, repoParams)
+	result, err := c.repo.ListTasksWithTx(ctx, tx, repoParams)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "list tasks failed")

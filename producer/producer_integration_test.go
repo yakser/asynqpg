@@ -343,7 +343,7 @@ func TestEnqueueTx(t *testing.T) {
 		assert.Equal(t, "process-order", task.Type)
 	})
 
-	t.Run("returns error when executor is nil", func(t *testing.T) {
+	t.Run("returns error when tx is nil", func(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -351,7 +351,7 @@ func TestEnqueueTx(t *testing.T) {
 		_, err = p.EnqueueTx(context.Background(), nil, &asynqpg.Task{Type: "test"})
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "querier cannot be nil")
+		assert.Contains(t, err.Error(), "tx cannot be nil")
 	})
 
 	t.Run("returns error when task is nil", func(t *testing.T) {
@@ -645,7 +645,7 @@ func TestEnqueueManyTx(t *testing.T) {
 		assert.Equal(t, 0, count)
 	})
 
-	t.Run("returns error when executor is nil", func(t *testing.T) {
+	t.Run("returns error when tx is nil", func(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -654,7 +654,7 @@ func TestEnqueueManyTx(t *testing.T) {
 		_, err = p.EnqueueManyTx(context.Background(), nil, tasks)
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "querier cannot be nil")
+		assert.Contains(t, err.Error(), "tx cannot be nil")
 	})
 
 	t.Run("returns empty results for empty input", func(t *testing.T) {

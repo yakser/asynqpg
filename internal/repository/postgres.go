@@ -50,11 +50,11 @@ func (p *Repository) PushTask(ctx context.Context, task *PushTaskParams) (PushTa
 	return p.pushTaskInternal(ctx, p.db, task)
 }
 
-func (p *Repository) PushTaskWithExecutor(ctx context.Context, exec asynqpg.Querier, task *PushTaskParams) (PushTaskResult, error) {
-	return p.pushTaskInternal(ctx, exec, task)
+func (p *Repository) PushTaskWithTx(ctx context.Context, tx asynqpg.Tx, task *PushTaskParams) (PushTaskResult, error) {
+	return p.pushTaskInternal(ctx, tx, task)
 }
 
-func (p *Repository) pushTaskInternal(ctx context.Context, exec asynqpg.Querier, task *PushTaskParams) (PushTaskResult, error) {
+func (p *Repository) pushTaskInternal(ctx context.Context, q asynqpg.Querier, task *PushTaskParams) (PushTaskResult, error) {
 	if task == nil {
 		return PushTaskResult{}, fmt.Errorf("task cannot be nil")
 	}
@@ -68,7 +68,7 @@ func (p *Repository) pushTaskInternal(ctx context.Context, exec asynqpg.Querier,
 	`
 
 	var result PushTaskResult
-	err := exec.QueryRowContext(ctx, query,
+	err := q.QueryRowContext(ctx, query,
 		task.Type, task.IdempotencyToken, task.Payload, task.Delay, task.AttemptsLeft).Scan(&result.ID, &result.Duplicate)
 	if err != nil {
 		return PushTaskResult{}, fmt.Errorf("enqueue task: %w", err)
@@ -131,8 +131,8 @@ func (p *Repository) PushTasks(ctx context.Context, params PushTasksParams) ([]P
 	return results, nil
 }
 
-// PushTasksWithExecutor inserts multiple tasks using provided executor (for transactions).
-func (p *Repository) PushTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params PushTasksParams) ([]PushTaskResult, error) {
+// PushTasksWithTx inserts multiple tasks using the provided transaction.
+func (p *Repository) PushTasksWithTx(ctx context.Context, tx asynqpg.Tx, params PushTasksParams) ([]PushTaskResult, error) {
 	if len(params.Tasks) == 0 {
 		return nil, nil
 	}
@@ -152,7 +152,7 @@ func (p *Repository) PushTasksWithExecutor(ctx context.Context, exec asynqpg.Que
 	}
 
 	var results []PushTaskResult
-	err := exec.SelectContext(ctx, &results, pushTasksQuery,
+	err := tx.SelectContext(ctx, &results, pushTasksQuery,
 		pq.Array(types),
 		pq.Array(tokens),
 		pq.Array(payloads),

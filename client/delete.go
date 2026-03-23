@@ -51,10 +51,10 @@ func (c *Client) DeleteTask(ctx context.Context, id int64) (*TaskInfo, error) {
 	return info, nil
 }
 
-// DeleteTaskTx deletes a task using the provided executor (transaction).
-func (c *Client) DeleteTaskTx(ctx context.Context, tx asynqpg.Querier, id int64) (*TaskInfo, error) {
+// DeleteTaskTx deletes a task using the provided transaction.
+func (c *Client) DeleteTaskTx(ctx context.Context, tx asynqpg.Tx, id int64) (*TaskInfo, error) {
 	if tx == nil {
-		return nil, fmt.Errorf("executor cannot be nil")
+		return nil, fmt.Errorf("tx cannot be nil")
 	}
 
 	ctx, span := c.tracer.Start(ctx, "asynqpg.delete_task",
@@ -63,7 +63,7 @@ func (c *Client) DeleteTaskTx(ctx context.Context, tx asynqpg.Querier, id int64)
 	)
 	defer span.End()
 
-	task, deleted, err := c.repo.DeleteTaskByIDWithExecutor(ctx, tx, id)
+	task, deleted, err := c.repo.DeleteTaskByIDWithTx(ctx, tx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTaskNotFound
