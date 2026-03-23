@@ -1168,8 +1168,6 @@ func TestTaskSnooze(t *testing.T) {
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
 		// Give consumer time to persist the result
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1231,8 +1229,6 @@ func TestTaskSnooze(t *testing.T) {
 		assert.Eventually(t, func() bool {
 			return atomic.LoadInt32(&processed) >= 2
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed at least twice")
-
-		time.Sleep(200 * time.Millisecond)
 
 		err = c.Stop()
 		require.NoError(t, err)
@@ -1296,8 +1292,6 @@ func TestTaskSnoozeWithError(t *testing.T) {
 			return atomic.LoadInt32(&processed) >= 2
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1356,8 +1350,6 @@ func TestTaskSnoozeWithError(t *testing.T) {
 		assert.Eventually(t, func() bool {
 			return atomic.LoadInt32(&processed) >= 1
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed")
-
-		time.Sleep(200 * time.Millisecond)
 
 		err = c.Stop()
 		require.NoError(t, err)
@@ -1502,8 +1494,6 @@ func TestProcessTask_MessagesPopulatedOnRetry(t *testing.T) {
 			return atomic.LoadInt32(&processed) >= 2
 		}, 10*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1564,8 +1554,6 @@ func TestSkipRetry(t *testing.T) {
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed once")
 
 		// Give consumer time to persist the result
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1624,8 +1612,6 @@ func TestSkipRetry(t *testing.T) {
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed once")
 
 		// Give consumer time to persist the result
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
