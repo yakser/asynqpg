@@ -257,6 +257,15 @@ func (bc *BatchCompleter) runLoop() {
 	defer ticker.Stop()
 
 	for {
+		// Priority select: always check ctx.Done() first to avoid running flush()
+		// with a cancelled context when both channels are ready simultaneously.
+		select {
+		case <-bc.ctx.Done():
+			bc.finalFlush()
+			return
+		default:
+		}
+
 		select {
 		case <-bc.ctx.Done():
 			bc.finalFlush()
