@@ -5,6 +5,8 @@ import (
 )
 
 func TestGet_Int(t *testing.T) {
+	t.Parallel()
+
 	v := 42
 	p := Get(v)
 	if p == nil {
@@ -18,6 +20,8 @@ func TestGet_Int(t *testing.T) {
 const testHelloStr = "hello"
 
 func TestGet_String(t *testing.T) {
+	t.Parallel()
+
 	v := testHelloStr
 	p := Get(v)
 	if p == nil {
@@ -34,6 +38,8 @@ type testStruct struct {
 }
 
 func TestGet_Struct(t *testing.T) {
+	t.Parallel()
+
 	v := testStruct{A: 1, B: "test"}
 	p := Get(v)
 	if p == nil {
@@ -45,6 +51,8 @@ func TestGet_Struct(t *testing.T) {
 }
 
 func TestGet_ZeroValue(t *testing.T) {
+	t.Parallel()
+
 	p := Get(0)
 	if p == nil {
 		t.Fatal("expected non-nil pointer")
@@ -55,6 +63,8 @@ func TestGet_ZeroValue(t *testing.T) {
 }
 
 func TestDerefOrDefault_NonNil(t *testing.T) {
+	t.Parallel()
+
 	v := 42
 	result := DerefOrDefault(&v, 0)
 	if result != 42 {
@@ -63,6 +73,8 @@ func TestDerefOrDefault_NonNil(t *testing.T) {
 }
 
 func TestDerefOrDefault_Nil(t *testing.T) {
+	t.Parallel()
+
 	result := DerefOrDefault[int](nil, 99)
 	if result != 99 {
 		t.Fatalf("expected 99, got %d", result)
@@ -70,6 +82,8 @@ func TestDerefOrDefault_Nil(t *testing.T) {
 }
 
 func TestDerefOrDefault_ZeroValue(t *testing.T) {
+	t.Parallel()
+
 	v := 0
 	result := DerefOrDefault(&v, 99)
 	if result != 0 {
@@ -78,6 +92,8 @@ func TestDerefOrDefault_ZeroValue(t *testing.T) {
 }
 
 func TestDerefOrDefault_String(t *testing.T) {
+	t.Parallel()
+
 	v := testHelloStr
 	result := DerefOrDefault(&v, "default")
 	if result != testHelloStr {
@@ -86,6 +102,8 @@ func TestDerefOrDefault_String(t *testing.T) {
 }
 
 func TestDerefOrDefault_NilString(t *testing.T) {
+	t.Parallel()
+
 	result := DerefOrDefault[string](nil, "default")
 	if result != "default" {
 		t.Fatalf("expected %q, got %q", "default", result)

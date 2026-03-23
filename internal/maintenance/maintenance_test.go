@@ -134,6 +134,8 @@ func (s *mockService) Name() string {
 // ========== Cleaner Config Tests ==========
 
 func TestCleanerConfig_SetDefaults(t *testing.T) {
+	t.Parallel()
+
 	cfg := CleanerConfig{}
 	cfg.setDefaults()
 
@@ -158,6 +160,8 @@ func TestCleanerConfig_SetDefaults(t *testing.T) {
 }
 
 func TestCleanerConfig_SetDefaults_CustomValues(t *testing.T) {
+	t.Parallel()
+
 	cfg := CleanerConfig{
 		CompletedRetention: 2 * time.Hour,
 		FailedRetention:    48 * time.Hour,
@@ -181,6 +185,8 @@ func TestCleanerConfig_SetDefaults_CustomValues(t *testing.T) {
 // ========== Cleaner Tests ==========
 
 func TestCleaner_Name(t *testing.T) {
+	t.Parallel()
+
 	c := NewCleaner(&mockCleanerRepo{}, CleanerConfig{})
 	if c.Name() != "cleaner" {
 		t.Fatalf("expected %q, got %q", "cleaner", c.Name())
@@ -188,6 +194,8 @@ func TestCleaner_Name(t *testing.T) {
 }
 
 func TestCleaner_RunOnce_NoTasks(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCleanerRepo{
 		results: []deleteResult{{count: 0, err: nil}},
 	}
@@ -203,6 +211,8 @@ func TestCleaner_RunOnce_NoTasks(t *testing.T) {
 }
 
 func TestCleaner_RunOnce_SingleBatch(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCleanerRepo{
 		results: []deleteResult{{count: 50, err: nil}},
 	}
@@ -218,6 +228,8 @@ func TestCleaner_RunOnce_SingleBatch(t *testing.T) {
 }
 
 func TestCleaner_RunOnce_MultipleBatches(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCleanerRepo{
 		results: []deleteResult{
 			{count: 100, err: nil}, // full batch – continue
@@ -236,6 +248,8 @@ func TestCleaner_RunOnce_MultipleBatches(t *testing.T) {
 }
 
 func TestCleaner_RunOnce_RepoError(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCleanerRepo{
 		results: []deleteResult{{count: 0, err: errors.New("db error")}},
 	}
@@ -248,6 +262,8 @@ func TestCleaner_RunOnce_RepoError(t *testing.T) {
 }
 
 func TestCleaner_RetentionParams(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCleanerRepo{
 		results: []deleteResult{{count: 0, err: nil}},
 	}
@@ -284,6 +300,8 @@ func TestCleaner_RetentionParams(t *testing.T) {
 }
 
 func TestCleaner_StartStop(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCleanerRepo{
 		results: []deleteResult{{count: 0, err: nil}},
 	}
@@ -299,6 +317,8 @@ func TestCleaner_StartStop(t *testing.T) {
 }
 
 func TestCleaner_Start_Idempotent(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCleanerRepo{
 		results: []deleteResult{{count: 0, err: nil}},
 	}
@@ -317,6 +337,8 @@ func TestCleaner_Start_Idempotent(t *testing.T) {
 }
 
 func TestCleaner_Stop_NotStarted(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCleanerRepo{}
 	c := NewCleaner(repo, CleanerConfig{})
 	// Should not panic
@@ -326,6 +348,8 @@ func TestCleaner_Stop_NotStarted(t *testing.T) {
 // ========== Rescuer Config Tests ==========
 
 func TestRescuerConfig_SetDefaults(t *testing.T) {
+	t.Parallel()
+
 	cfg := RescuerConfig{}
 	cfg.setDefaults()
 
@@ -347,6 +371,8 @@ func TestRescuerConfig_SetDefaults(t *testing.T) {
 }
 
 func TestRescuerConfig_SetDefaults_NegativeValues(t *testing.T) {
+	t.Parallel()
+
 	cfg := RescuerConfig{
 		RescueAfter: -1,
 		Interval:    -1,
@@ -368,6 +394,8 @@ func TestRescuerConfig_SetDefaults_NegativeValues(t *testing.T) {
 // ========== Rescuer Tests ==========
 
 func TestRescuer_Name(t *testing.T) {
+	t.Parallel()
+
 	r := NewRescuer(&mockRescuerRepo{}, RescuerConfig{})
 	if r.Name() != "rescuer" {
 		t.Fatalf("expected %q, got %q", "rescuer", r.Name())
@@ -375,6 +403,8 @@ func TestRescuer_Name(t *testing.T) {
 }
 
 func TestRescuer_RunOnce_NoStuckTasks(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{{tasks: nil, err: nil}},
 	}
@@ -387,6 +417,8 @@ func TestRescuer_RunOnce_NoStuckTasks(t *testing.T) {
 }
 
 func TestRescuer_RunOnce_RetryTasks(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{
 			{tasks: []repository.StuckTask{
@@ -423,6 +455,8 @@ func TestRescuer_RunOnce_RetryTasks(t *testing.T) {
 }
 
 func TestRescuer_RunOnce_DiscardTasks(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{
 			{tasks: []repository.StuckTask{
@@ -453,6 +487,8 @@ func TestRescuer_RunOnce_DiscardTasks(t *testing.T) {
 }
 
 func TestRescuer_RunOnce_MixedTasks(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{
 			{tasks: []repository.StuckTask{
@@ -484,6 +520,8 @@ func TestRescuer_RunOnce_MixedTasks(t *testing.T) {
 }
 
 func TestRescuer_RunOnce_MultipleBatches(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{
 			{tasks: []repository.StuckTask{
@@ -517,6 +555,8 @@ func TestRescuer_RunOnce_MultipleBatches(t *testing.T) {
 }
 
 func TestRescuer_RunOnce_GetStuckError(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{
 			{tasks: nil, err: errors.New("db error")},
@@ -531,6 +571,8 @@ func TestRescuer_RunOnce_GetStuckError(t *testing.T) {
 }
 
 func TestRescuer_RunOnce_RetryError(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{
 			{tasks: []repository.StuckTask{
@@ -551,6 +593,8 @@ func TestRescuer_RunOnce_RetryError(t *testing.T) {
 }
 
 func TestRescuer_RunOnce_FailError(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{
 			{tasks: []repository.StuckTask{
@@ -568,6 +612,8 @@ func TestRescuer_RunOnce_FailError(t *testing.T) {
 }
 
 func TestRescuer_RetryPolicy_Applied(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{
 			{tasks: []repository.StuckTask{
@@ -602,6 +648,8 @@ func TestRescuer_RetryPolicy_Applied(t *testing.T) {
 }
 
 func TestRescuer_StartStop(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{{tasks: nil}},
 	}
@@ -617,6 +665,8 @@ func TestRescuer_StartStop(t *testing.T) {
 }
 
 func TestRescuer_Start_Idempotent(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{
 		stuckResults: []stuckResult{{tasks: nil}},
 	}
@@ -635,6 +685,8 @@ func TestRescuer_Start_Idempotent(t *testing.T) {
 }
 
 func TestRescuer_Stop_NotStarted(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockRescuerRepo{}
 	r := NewRescuer(repo, RescuerConfig{})
 	// Should not panic
@@ -644,6 +696,8 @@ func TestRescuer_Stop_NotStarted(t *testing.T) {
 // ========== Maintainer Tests ==========
 
 func TestMaintainer_NewMaintainer_NilLogger(t *testing.T) {
+	t.Parallel()
+
 	m := NewMaintainer(nil)
 	if m.logger == nil {
 		t.Fatal("expected default logger")
@@ -651,6 +705,8 @@ func TestMaintainer_NewMaintainer_NilLogger(t *testing.T) {
 }
 
 func TestMaintainer_Start_StartsAllServices(t *testing.T) {
+	t.Parallel()
+
 	svc1 := &mockService{name: "svc1"}
 	svc2 := &mockService{name: "svc2"}
 	m := NewMaintainer(nil, svc1, svc2)
@@ -673,6 +729,8 @@ func TestMaintainer_Start_StartsAllServices(t *testing.T) {
 }
 
 func TestMaintainer_Stop_StopsAllServices(t *testing.T) {
+	t.Parallel()
+
 	svc1 := &mockService{name: "svc1"}
 	svc2 := &mockService{name: "svc2"}
 	m := NewMaintainer(nil, svc1, svc2)
@@ -694,6 +752,8 @@ func TestMaintainer_Stop_StopsAllServices(t *testing.T) {
 }
 
 func TestMaintainer_Start_Idempotent(t *testing.T) {
+	t.Parallel()
+
 	svc := &mockService{name: "svc"}
 	m := NewMaintainer(nil, svc)
 
@@ -710,12 +770,16 @@ func TestMaintainer_Start_Idempotent(t *testing.T) {
 }
 
 func TestMaintainer_Stop_NotStarted(t *testing.T) {
+	t.Parallel()
+
 	m := NewMaintainer(nil)
 	// Should not panic
 	m.Stop()
 }
 
 func TestMaintainer_IsStarted(t *testing.T) {
+	t.Parallel()
+
 	m := NewMaintainer(nil, &mockService{name: "svc"})
 
 	if m.IsStarted() {
@@ -739,6 +803,8 @@ func TestMaintainer_IsStarted(t *testing.T) {
 }
 
 func TestMaintainer_ServiceStartError(t *testing.T) {
+	t.Parallel()
+
 	svc1 := &mockService{name: "failing", startErr: errors.New("start failed")}
 	svc2 := &mockService{name: "working"}
 	m := NewMaintainer(nil, svc1, svc2)
@@ -761,6 +827,8 @@ func TestMaintainer_ServiceStartError(t *testing.T) {
 }
 
 func TestMaintainer_NoServices(t *testing.T) {
+	t.Parallel()
+
 	m := NewMaintainer(nil)
 
 	err := m.Start(context.Background())

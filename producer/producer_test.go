@@ -93,6 +93,8 @@ func newTestProducer(repo *mockProducerRepo) *Producer {
 // --- Enqueue Tests ---
 
 func TestEnqueue_Success(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
@@ -122,6 +124,8 @@ func TestEnqueue_Success(t *testing.T) {
 }
 
 func TestEnqueue_NilTask(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	_, err := p.Enqueue(context.Background(), nil)
 	if err == nil {
@@ -130,6 +134,8 @@ func TestEnqueue_NilTask(t *testing.T) {
 }
 
 func TestEnqueue_EmptyType(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
 		Type:    "",
@@ -141,6 +147,8 @@ func TestEnqueue_EmptyType(t *testing.T) {
 }
 
 func TestEnqueue_NilPayload(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
 		Type:    "test",
@@ -152,6 +160,8 @@ func TestEnqueue_NilPayload(t *testing.T) {
 }
 
 func TestEnqueue_WithDelay(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
@@ -170,6 +180,8 @@ func TestEnqueue_WithDelay(t *testing.T) {
 }
 
 func TestEnqueue_WithProcessAt(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
@@ -191,6 +203,8 @@ func TestEnqueue_WithProcessAt(t *testing.T) {
 }
 
 func TestEnqueue_ProcessAtInPast(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
@@ -210,6 +224,8 @@ func TestEnqueue_ProcessAtInPast(t *testing.T) {
 }
 
 func TestEnqueue_CustomMaxRetry(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
@@ -228,6 +244,8 @@ func TestEnqueue_CustomMaxRetry(t *testing.T) {
 }
 
 func TestEnqueue_DefaultMaxRetry(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
@@ -245,6 +263,8 @@ func TestEnqueue_DefaultMaxRetry(t *testing.T) {
 }
 
 func TestEnqueue_RepoError(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{pushTaskErr: errors.New("db error")}
 	p := newTestProducer(repo)
 
@@ -258,6 +278,8 @@ func TestEnqueue_RepoError(t *testing.T) {
 }
 
 func TestEnqueue_IdempotencyToken(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
@@ -280,6 +302,8 @@ func TestEnqueue_IdempotencyToken(t *testing.T) {
 }
 
 func TestEnqueue_Duplicate(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{
 		pushTaskResult: repository.PushTaskResult{ID: 42, Duplicate: true},
 	}
@@ -303,6 +327,8 @@ func TestEnqueue_Duplicate(t *testing.T) {
 // --- EnqueueTx Tests ---
 
 func TestEnqueueTx_Success(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
@@ -320,6 +346,8 @@ func TestEnqueueTx_Success(t *testing.T) {
 }
 
 func TestEnqueueTx_NilTx(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	_, err := p.EnqueueTx(context.Background(), nil, &asynqpg.Task{
 		Type:    "test",
@@ -331,6 +359,8 @@ func TestEnqueueTx_NilTx(t *testing.T) {
 }
 
 func TestEnqueueTx_NilTask(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	_, err := p.EnqueueTx(context.Background(), &mockTx{}, nil)
 	if err == nil {
@@ -339,6 +369,8 @@ func TestEnqueueTx_NilTask(t *testing.T) {
 }
 
 func TestEnqueueTx_EmptyType(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	_, err := p.EnqueueTx(context.Background(), &mockTx{}, &asynqpg.Task{
 		Type:    "",
@@ -350,6 +382,8 @@ func TestEnqueueTx_EmptyType(t *testing.T) {
 }
 
 func TestEnqueueTx_RepoError(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{pushTxErr: errors.New("tx error")}
 	p := newTestProducer(repo)
 
@@ -365,6 +399,8 @@ func TestEnqueueTx_RepoError(t *testing.T) {
 // --- EnqueueMany Tests ---
 
 func TestEnqueueMany_Success(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{
 		pushManyResult: []repository.PushTaskResult{
 			{ID: 1}, {ID: 2}, {ID: 3},
@@ -395,6 +431,8 @@ func TestEnqueueMany_Success(t *testing.T) {
 }
 
 func TestEnqueueMany_Empty(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 
 	result, err := p.EnqueueMany(context.Background(), nil)
@@ -407,6 +445,8 @@ func TestEnqueueMany_Empty(t *testing.T) {
 }
 
 func TestEnqueueMany_NilTask(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 
 	_, err := p.EnqueueMany(context.Background(), []*asynqpg.Task{
@@ -419,6 +459,8 @@ func TestEnqueueMany_NilTask(t *testing.T) {
 }
 
 func TestEnqueueMany_EmptyType(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 
 	_, err := p.EnqueueMany(context.Background(), []*asynqpg.Task{
@@ -430,6 +472,8 @@ func TestEnqueueMany_EmptyType(t *testing.T) {
 }
 
 func TestEnqueueMany_NilPayload(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 
 	_, err := p.EnqueueMany(context.Background(), []*asynqpg.Task{
@@ -441,6 +485,8 @@ func TestEnqueueMany_NilPayload(t *testing.T) {
 }
 
 func TestEnqueueMany_RepoError(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{pushManyErr: errors.New("batch error")}
 	p := newTestProducer(repo)
 
@@ -455,6 +501,8 @@ func TestEnqueueMany_RepoError(t *testing.T) {
 // --- EnqueueManyTx Tests ---
 
 func TestEnqueueManyTx_Success(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{
 		pushManyTxResult: []repository.PushTaskResult{
 			{ID: 1}, {ID: 2},
@@ -479,6 +527,8 @@ func TestEnqueueManyTx_Success(t *testing.T) {
 }
 
 func TestEnqueueManyTx_NilTx(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 
 	_, err := p.EnqueueManyTx(context.Background(), nil, []*asynqpg.Task{
@@ -490,6 +540,8 @@ func TestEnqueueManyTx_NilTx(t *testing.T) {
 }
 
 func TestEnqueueManyTx_Empty(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 
 	result, err := p.EnqueueManyTx(context.Background(), &mockTx{}, nil)
@@ -502,6 +554,8 @@ func TestEnqueueManyTx_Empty(t *testing.T) {
 }
 
 func TestEnqueueManyTx_Validation(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 
 	_, err := p.EnqueueManyTx(context.Background(), &mockTx{}, []*asynqpg.Task{
@@ -513,6 +567,8 @@ func TestEnqueueManyTx_Validation(t *testing.T) {
 }
 
 func TestEnqueueManyTx_RepoError(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockProducerRepo{pushManyTxErr: errors.New("tx batch error")}
 	p := newTestProducer(repo)
 
@@ -527,6 +583,8 @@ func TestEnqueueManyTx_RepoError(t *testing.T) {
 // --- New Tests ---
 
 func TestNew_NilPool(t *testing.T) {
+	t.Parallel()
+
 	_, err := New(Config{Pool: nil})
 	if err == nil {
 		t.Fatal("expected error for nil pool")
@@ -534,6 +592,8 @@ func TestNew_NilPool(t *testing.T) {
 }
 
 func TestSetDefaults(t *testing.T) {
+	t.Parallel()
+
 	p := &Producer{}
 	p.setDefaults()
 
@@ -546,6 +606,8 @@ func TestSetDefaults(t *testing.T) {
 }
 
 func TestCalculateDelay_NoDelay(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	task := &asynqpg.Task{Type: "test", Payload: []byte(`{}`)}
 
@@ -556,6 +618,8 @@ func TestCalculateDelay_NoDelay(t *testing.T) {
 }
 
 func TestCalculateDelay_WithDelay(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	task := &asynqpg.Task{Type: "test", Payload: []byte(`{}`), Delay: 5 * time.Second}
 
@@ -566,6 +630,8 @@ func TestCalculateDelay_WithDelay(t *testing.T) {
 }
 
 func TestCalculateDelay_ProcessAtOverridesDelay(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	task := &asynqpg.Task{
 		Type:      "test",
@@ -581,6 +647,8 @@ func TestCalculateDelay_ProcessAtOverridesDelay(t *testing.T) {
 }
 
 func TestCalculateMaxRetry_Custom(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	task := &asynqpg.Task{MaxRetry: ptr.Get(7)}
 
@@ -591,6 +659,8 @@ func TestCalculateMaxRetry_Custom(t *testing.T) {
 }
 
 func TestCalculateMaxRetry_Default(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	task := &asynqpg.Task{}
 
@@ -601,6 +671,8 @@ func TestCalculateMaxRetry_Default(t *testing.T) {
 }
 
 func TestCalculateMaxRetry_ExplicitZero(t *testing.T) {
+	t.Parallel()
+
 	p := newTestProducer(&mockProducerRepo{})
 	task := &asynqpg.Task{MaxRetry: ptr.Get(0)}
 

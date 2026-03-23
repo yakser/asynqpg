@@ -16,6 +16,8 @@ import (
 )
 
 func TestPushTasks_Basic(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -36,6 +38,8 @@ func TestPushTasks_Basic(t *testing.T) {
 }
 
 func TestPushTasks_EmptyArray(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -46,6 +50,8 @@ func TestPushTasks_EmptyArray(t *testing.T) {
 }
 
 func TestPushTasks_Idempotency(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -70,6 +76,8 @@ func TestPushTasks_Idempotency(t *testing.T) {
 }
 
 func TestCompleteTasksMany_Basic(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -98,6 +106,8 @@ func TestCompleteTasksMany_Basic(t *testing.T) {
 }
 
 func TestCompleteTasksMany_EmptyArray(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -108,6 +118,8 @@ func TestCompleteTasksMany_EmptyArray(t *testing.T) {
 }
 
 func TestCompleteTasksMany_NonExistentIDs(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -118,6 +130,8 @@ func TestCompleteTasksMany_NonExistentIDs(t *testing.T) {
 }
 
 func TestCompleteTasksMany_AlreadyCompleted(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -149,6 +163,8 @@ func TestCompleteTasksMany_AlreadyCompleted(t *testing.T) {
 }
 
 func TestFailTasksMany_Basic(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -177,6 +193,8 @@ func TestFailTasksMany_Basic(t *testing.T) {
 }
 
 func TestFailTasksMany_DifferentMessages(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -205,6 +223,8 @@ func TestFailTasksMany_DifferentMessages(t *testing.T) {
 }
 
 func TestFailTasksMany_MismatchedLengths(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -218,6 +238,8 @@ func TestFailTasksMany_MismatchedLengths(t *testing.T) {
 }
 
 func TestRetryTasksMany_Basic(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -254,6 +276,8 @@ func TestRetryTasksMany_Basic(t *testing.T) {
 }
 
 func TestRetryTasksMany_MismatchedLengths(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -268,6 +292,8 @@ func TestRetryTasksMany_MismatchedLengths(t *testing.T) {
 }
 
 func TestRetryTasksMany_MixedStates(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()

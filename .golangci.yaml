@@ -32,6 +32,7 @@ linters:
     - mirror
     - nilnil
     - nosprintfhostport
+    - paralleltest
   settings:
     gosec:
       severity: high

@@ -23,6 +23,8 @@ import (
 )
 
 func TestObservability_EnqueueMetrics(t *testing.T) {
+	t.Parallel()
+
 	db := testutils.SetupTestDatabase(t)
 
 	reader := sdkmetric.NewManualReader()
@@ -63,6 +65,8 @@ func TestObservability_EnqueueMetrics(t *testing.T) {
 }
 
 func TestObservability_EnqueueManyMetrics(t *testing.T) {
+	t.Parallel()
+
 	db := testutils.SetupTestDatabase(t)
 
 	reader := sdkmetric.NewManualReader()
@@ -94,6 +98,8 @@ func TestObservability_EnqueueManyMetrics(t *testing.T) {
 }
 
 func TestObservability_EnqueueTracing(t *testing.T) {
+	t.Parallel()
+
 	db := testutils.SetupTestDatabase(t)
 
 	sr := tracetest.NewSpanRecorder()
@@ -122,6 +128,8 @@ func TestObservability_EnqueueTracing(t *testing.T) {
 }
 
 func TestObservability_EnqueueManyTracing(t *testing.T) {
+	t.Parallel()
+
 	db := testutils.SetupTestDatabase(t)
 
 	sr := tracetest.NewSpanRecorder()
@@ -147,6 +155,8 @@ func TestObservability_EnqueueManyTracing(t *testing.T) {
 }
 
 func TestObservability_ProcessMetricsAndTracing(t *testing.T) {
+	t.Parallel()
+
 	db := testutils.SetupTestDatabase(t)
 
 	reader := sdkmetric.NewManualReader()
@@ -221,6 +231,8 @@ func TestObservability_ProcessMetricsAndTracing(t *testing.T) {
 }
 
 func TestObservability_ClientTracing(t *testing.T) {
+	t.Parallel()
+
 	db := testutils.SetupTestDatabase(t)
 
 	sr := tracetest.NewSpanRecorder()
@@ -261,6 +273,8 @@ func TestObservability_ClientTracing(t *testing.T) {
 }
 
 func TestObservability_NoopWhenNoProvider(t *testing.T) {
+	t.Parallel()
+
 	db := testutils.SetupTestDatabase(t)
 
 	// Create producer without any providers - should work with noop

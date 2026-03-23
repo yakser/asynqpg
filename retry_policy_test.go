@@ -6,6 +6,8 @@ import (
 )
 
 func TestDefaultRetryPolicy_NextRetry(t *testing.T) {
+	t.Parallel()
+
 	policy := &DefaultRetryPolicy{}
 
 	tests := []struct {
@@ -20,6 +22,8 @@ func TestDefaultRetryPolicy_NextRetry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
 			delay := policy.NextRetry(tt.attempt)
 			if delay < tt.minExpected || delay > tt.maxExpected {
 				t.Errorf("attempt %d: got %v, want between %v and %v",
@@ -30,6 +34,8 @@ func TestDefaultRetryPolicy_NextRetry(t *testing.T) {
 }
 
 func TestDefaultRetryPolicy_MaxDelay(t *testing.T) {
+	t.Parallel()
+
 	policy := &DefaultRetryPolicy{
 		MaxRetryDelay: 1 * time.Hour,
 	}
@@ -42,6 +48,8 @@ func TestDefaultRetryPolicy_MaxDelay(t *testing.T) {
 }
 
 func TestConstantRetryPolicy(t *testing.T) {
+	t.Parallel()
+
 	policy := &ConstantRetryPolicy{
 		Delay: 5 * time.Second,
 	}

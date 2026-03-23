@@ -19,7 +19,11 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully creates producer with valid config", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		p, err := producer.New(producer.Config{Pool: db})
@@ -28,6 +32,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("returns error when Pool is nil", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := producer.New(producer.Config{})
 		require.Error(t, err)
 		assert.Nil(t, p)
@@ -37,7 +43,11 @@ func TestNew(t *testing.T) {
 }
 
 func TestEnqueue(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully enqueues task", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -58,6 +68,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("returns error when task is nil", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -69,6 +81,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("returns error when task type is empty", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -80,6 +94,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("applies delay correctly", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -101,6 +117,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("applies max retry from config", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{
 			Pool:            db,
@@ -122,6 +140,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("task max retry overrides config", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{
 			Pool:            db,
@@ -145,7 +165,11 @@ func TestEnqueue(t *testing.T) {
 }
 
 func TestEnqueueTx(t *testing.T) {
+	t.Parallel()
+
 	t.Run("task created after commit", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -177,6 +201,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("task not created on rollback", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -203,6 +229,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("multiple tasks in single transaction", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -237,6 +265,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("multiple tasks rollback together", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -269,6 +299,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("atomicity with business data", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		_, err := db.Exec(`CREATE TABLE IF NOT EXISTS test_orders (id SERIAL PRIMARY KEY, name TEXT)`)
@@ -307,6 +339,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("atomicity commit with business data", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		_, err := db.Exec(`CREATE TABLE IF NOT EXISTS test_orders (id SERIAL PRIMARY KEY, name TEXT)`)
@@ -344,6 +378,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("returns error when tx is nil", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -355,6 +391,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("returns error when task is nil", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -371,6 +409,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("returns error when task type is empty", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -387,6 +427,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("applies delay in transaction", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -415,7 +457,11 @@ func TestEnqueueTx(t *testing.T) {
 }
 
 func TestEnqueueMany(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully enqueues multiple tasks", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -437,6 +483,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("returns empty results for empty input", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -447,6 +495,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("handles idempotency - flags duplicates", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -471,6 +521,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("validates all tasks - rejects nil task", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -487,6 +539,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("validates all tasks - rejects empty type", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -502,6 +556,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("validates all tasks - rejects nil payload", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -517,6 +573,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("applies delay and max retry", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db, DefaultMaxRetry: 5})
 		require.NoError(t, err)
@@ -536,6 +594,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("handles mixed tasks with different configs", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db, DefaultMaxRetry: 3})
 		require.NoError(t, err)
@@ -560,6 +620,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("large batch without chunking", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -585,7 +647,11 @@ func TestEnqueueMany(t *testing.T) {
 }
 
 func TestEnqueueManyTx(t *testing.T) {
+	t.Parallel()
+
 	t.Run("tasks created after commit", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -620,6 +686,8 @@ func TestEnqueueManyTx(t *testing.T) {
 	})
 
 	t.Run("tasks not created on rollback", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -646,6 +714,8 @@ func TestEnqueueManyTx(t *testing.T) {
 	})
 
 	t.Run("returns error when tx is nil", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -658,6 +728,8 @@ func TestEnqueueManyTx(t *testing.T) {
 	})
 
 	t.Run("returns empty results for empty input", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -673,6 +745,8 @@ func TestEnqueueManyTx(t *testing.T) {
 	})
 
 	t.Run("atomicity with business data", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		_, err := db.Exec(`CREATE TABLE IF NOT EXISTS batch_orders (id SERIAL PRIMARY KEY, name TEXT)`)
