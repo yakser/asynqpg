@@ -21,12 +21,12 @@ import (
 func pushTask(t *testing.T, repo *repository.Repository, taskType string) int64 {
 	t.Helper()
 	ctx := context.Background()
-	id, err := repo.PushTask(ctx, &repository.PushTaskParams{
+	result, err := repo.PushTask(ctx, &repository.PushTaskParams{
 		Type: taskType, Payload: []byte(`{"test":true}`),
 		AttemptsLeft: 3, Delay: db.NewDuration(0),
 	})
 	require.NoError(t, err)
-	return id
+	return result.ID
 }
 
 // makeRunning transitions a pending task to running by fetching it via GetReadyTasks.

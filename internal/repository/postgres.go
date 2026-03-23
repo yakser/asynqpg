@@ -27,6 +27,13 @@ type PushTaskParams struct {
 	AttemptsLeft     int         `db:"attempts_left"`
 }
 
+// PushTaskResult contains the result of a single task insertion.
+// Duplicate is true when the task was already present (matched by idempotency token).
+type PushTaskResult struct {
+	ID        int64 `db:"id"`
+	Duplicate bool  `db:"duplicate"`
+}
+
 type Task struct {
 	ID               int64          `db:"id"`
 	Type             string         `db:"type"`
@@ -39,34 +46,35 @@ type Task struct {
 	AttemptsElapsed  int            `db:"attempts_elapsed"`
 }
 
-func (p *Repository) PushTask(ctx context.Context, task *PushTaskParams) (int64, error) {
+func (p *Repository) PushTask(ctx context.Context, task *PushTaskParams) (PushTaskResult, error) {
 	return p.pushTaskInternal(ctx, p.db, task)
 }
 
-func (p *Repository) PushTaskWithExecutor(ctx context.Context, exec asynqpg.Querier, task *PushTaskParams) (int64, error) {
+func (p *Repository) PushTaskWithExecutor(ctx context.Context, exec asynqpg.Querier, task *PushTaskParams) (PushTaskResult, error) {
 	return p.pushTaskInternal(ctx, exec, task)
 }
 
-func (p *Repository) pushTaskInternal(ctx context.Context, exec asynqpg.Querier, task *PushTaskParams) (int64, error) {
+func (p *Repository) pushTaskInternal(ctx context.Context, exec asynqpg.Querier, task *PushTaskParams) (PushTaskResult, error) {
 	if task == nil {
-		return 0, fmt.Errorf("task cannot be nil")
+		return PushTaskResult{}, fmt.Errorf("task cannot be nil")
 	}
 
 	const query = `
 		INSERT INTO asynqpg_tasks (type, idempotency_token, payload, blocked_till, attempts_left)
 		VALUES ($1, $2, $3, now() + $4, $5)
-		ON CONFLICT DO NOTHING
-		RETURNING id
+		ON CONFLICT (type, idempotency_token) WHERE idempotency_token IS NOT NULL
+		DO UPDATE SET type = EXCLUDED.type
+		RETURNING id, (xmax != 0) AS duplicate
 	`
 
-	var id int64
+	var result PushTaskResult
 	err := exec.QueryRowContext(ctx, query,
-		task.Type, task.IdempotencyToken, task.Payload, task.Delay, task.AttemptsLeft).Scan(&id)
+		task.Type, task.IdempotencyToken, task.Payload, task.Delay, task.AttemptsLeft).Scan(&result.ID, &result.Duplicate)
 	if err != nil {
-		return 0, fmt.Errorf("enqueue task: %w", err)
+		return PushTaskResult{}, fmt.Errorf("enqueue task: %w", err)
 	}
 
-	return id, nil
+	return result, nil
 }
 
 // PushTasksParams contains parameters for batch task insertion.
@@ -74,7 +82,7 @@ type PushTasksParams struct {
 	Tasks []PushTaskParams
 }
 
-const PushTasksQuery = `
+const pushTasksQuery = `
 	INSERT INTO asynqpg_tasks (type, idempotency_token, payload, blocked_till, attempts_left)
 	SELECT
 		unnest($1::text[]),
@@ -82,13 +90,14 @@ const PushTasksQuery = `
 		unnest($3::bytea[]),
 		now() + unnest($4::interval[]),
 		unnest($5::int[])
-	ON CONFLICT DO NOTHING
-	RETURNING id
+	ON CONFLICT (type, idempotency_token) WHERE idempotency_token IS NOT NULL
+	DO UPDATE SET type = EXCLUDED.type
+	RETURNING id, (xmax != 0) AS duplicate
 `
 
 // PushTasks inserts multiple tasks in a single batch operation.
-// Returns the IDs of inserted tasks. Uses ON CONFLICT DO NOTHING for idempotency.
-func (p *Repository) PushTasks(ctx context.Context, params PushTasksParams) ([]int64, error) {
+// Returns per-task results with IDs and duplicate flags.
+func (p *Repository) PushTasks(ctx context.Context, params PushTasksParams) ([]PushTaskResult, error) {
 	if len(params.Tasks) == 0 {
 		return nil, nil
 	}
@@ -107,8 +116,8 @@ func (p *Repository) PushTasks(ctx context.Context, params PushTasksParams) ([]i
 		attemptsLeft[i] = t.AttemptsLeft
 	}
 
-	var ids []int64
-	err := p.db.SelectContext(ctx, &ids, PushTasksQuery,
+	var results []PushTaskResult
+	err := p.db.SelectContext(ctx, &results, pushTasksQuery,
 		pq.Array(types),
 		pq.Array(tokens),
 		pq.Array(payloads),
@@ -119,16 +128,11 @@ func (p *Repository) PushTasks(ctx context.Context, params PushTasksParams) ([]i
 		return nil, fmt.Errorf("batch insert tasks: %w", err)
 	}
 
-	return ids, nil
+	return results, nil
 }
 
 // PushTasksWithExecutor inserts multiple tasks using provided executor (for transactions).
-// SelectExecutor is a minimal interface for batch insert operations.
-type SelectExecutor interface {
-	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
-}
-
-func (p *Repository) PushTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params PushTasksParams) ([]int64, error) {
+func (p *Repository) PushTasksWithExecutor(ctx context.Context, exec asynqpg.Querier, params PushTasksParams) ([]PushTaskResult, error) {
 	if len(params.Tasks) == 0 {
 		return nil, nil
 	}
@@ -147,8 +151,8 @@ func (p *Repository) PushTasksWithExecutor(ctx context.Context, exec asynqpg.Que
 		attemptsLeft[i] = t.AttemptsLeft
 	}
 
-	var ids []int64
-	err := exec.SelectContext(ctx, &ids, PushTasksQuery,
+	var results []PushTaskResult
+	err := exec.SelectContext(ctx, &results, pushTasksQuery,
 		pq.Array(types),
 		pq.Array(tokens),
 		pq.Array(payloads),
@@ -159,7 +163,7 @@ func (p *Repository) PushTasksWithExecutor(ctx context.Context, exec asynqpg.Que
 		return nil, fmt.Errorf("batch insert tasks: %w", err)
 	}
 
-	return ids, nil
+	return results, nil
 }
 
 type GetReadyTasksParams struct {

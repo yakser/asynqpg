@@ -426,22 +426,27 @@ func TestEnqueueMany(t *testing.T) {
 			{Type: "batch-task", Payload: []byte(`{"id":3}`)},
 		}
 
-		ids, err := p.EnqueueMany(t.Context(), tasks)
+		result, err := p.EnqueueMany(t.Context(), tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids, 3)
+		assert.Len(t, result.Results, 3)
+		assert.Equal(t, 3, result.InsertedCount())
+		for _, r := range result.Results {
+			assert.False(t, r.Duplicate)
+			assert.NotZero(t, r.ID)
+		}
 	})
 
-	t.Run("returns empty slice for empty input", func(t *testing.T) {
+	t.Run("returns empty results for empty input", func(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
 
-		ids, err := p.EnqueueMany(t.Context(), []*asynqpg.Task{})
+		result, err := p.EnqueueMany(t.Context(), []*asynqpg.Task{})
 		require.NoError(t, err)
-		assert.Len(t, ids, 0)
+		assert.Len(t, result.Results, 0)
 	})
 
-	t.Run("handles idempotency - skips duplicates", func(t *testing.T) {
+	t.Run("handles idempotency - flags duplicates", func(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -452,14 +457,17 @@ func TestEnqueueMany(t *testing.T) {
 		}
 
 		// First insert
-		ids1, err := p.EnqueueMany(t.Context(), tasks)
+		result1, err := p.EnqueueMany(t.Context(), tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids1, 1)
+		assert.Len(t, result1.Results, 1)
+		assert.False(t, result1.Results[0].Duplicate)
 
-		// Second insert with same token - should be skipped
-		ids2, err := p.EnqueueMany(t.Context(), tasks)
+		// Second insert with same token - should be flagged as duplicate
+		result2, err := p.EnqueueMany(t.Context(), tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids2, 0)
+		assert.Len(t, result2.Results, 1)
+		assert.True(t, result2.Results[0].Duplicate)
+		assert.Equal(t, result1.Results[0].ID, result2.Results[0].ID)
 	})
 
 	t.Run("validates all tasks - rejects nil task", func(t *testing.T) {
@@ -565,9 +573,9 @@ func TestEnqueueMany(t *testing.T) {
 			}
 		}
 
-		ids, err := p.EnqueueMany(t.Context(), tasks)
+		result, err := p.EnqueueMany(t.Context(), tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids, batchSize)
+		assert.Len(t, result.Results, batchSize)
 
 		var count int
 		err = db.Get(&count, "SELECT COUNT(*) FROM asynqpg_tasks WHERE type = 'large-batch-task'")
@@ -591,9 +599,9 @@ func TestEnqueueManyTx(t *testing.T) {
 			{Type: "batch-tx-task", Payload: []byte(`{"id":2}`)},
 		}
 
-		ids, err := p.EnqueueManyTx(ctx, tx, tasks)
+		result, err := p.EnqueueManyTx(ctx, tx, tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids, 2)
+		assert.Len(t, result.Results, 2)
 
 		// Not visible before commit
 		var countBeforeCommit int
@@ -649,7 +657,7 @@ func TestEnqueueManyTx(t *testing.T) {
 		assert.Contains(t, err.Error(), "querier cannot be nil")
 	})
 
-	t.Run("returns empty slice for empty input", func(t *testing.T) {
+	t.Run("returns empty results for empty input", func(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -659,9 +667,9 @@ func TestEnqueueManyTx(t *testing.T) {
 		require.NoError(t, err)
 		defer tx.Rollback()
 
-		ids, err := p.EnqueueManyTx(ctx, tx, []*asynqpg.Task{})
+		result, err := p.EnqueueManyTx(ctx, tx, []*asynqpg.Task{})
 		require.NoError(t, err)
-		assert.Len(t, ids, 0)
+		assert.Len(t, result.Results, 0)
 	})
 
 	t.Run("atomicity with business data", func(t *testing.T) {

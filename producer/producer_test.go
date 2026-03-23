@@ -16,33 +16,41 @@ import (
 
 type mockProducerRepo struct {
 	pushTaskCalls    []*repository.PushTaskParams
+	pushTaskResult   repository.PushTaskResult
 	pushTaskErr      error
 	pushTxCalls      []*repository.PushTaskParams
+	pushTxResult     repository.PushTaskResult
 	pushTxErr        error
 	pushManyCalls    []repository.PushTasksParams
-	pushManyResult   []int64
+	pushManyResult   []repository.PushTaskResult
 	pushManyErr      error
 	pushManyTxCalls  []repository.PushTasksParams
-	pushManyTxResult []int64
+	pushManyTxResult []repository.PushTaskResult
 	pushManyTxErr    error
 }
 
-func (m *mockProducerRepo) PushTask(_ context.Context, task *repository.PushTaskParams) (int64, error) {
+func (m *mockProducerRepo) PushTask(_ context.Context, task *repository.PushTaskParams) (repository.PushTaskResult, error) {
 	m.pushTaskCalls = append(m.pushTaskCalls, task)
-	return int64(len(m.pushTaskCalls)), m.pushTaskErr
+	if m.pushTaskResult.ID == 0 && m.pushTaskErr == nil {
+		return repository.PushTaskResult{ID: int64(len(m.pushTaskCalls))}, nil
+	}
+	return m.pushTaskResult, m.pushTaskErr
 }
 
-func (m *mockProducerRepo) PushTaskWithExecutor(_ context.Context, _ asynqpg.Querier, task *repository.PushTaskParams) (int64, error) {
+func (m *mockProducerRepo) PushTaskWithExecutor(_ context.Context, _ asynqpg.Querier, task *repository.PushTaskParams) (repository.PushTaskResult, error) {
 	m.pushTxCalls = append(m.pushTxCalls, task)
-	return int64(len(m.pushTxCalls)), m.pushTxErr
+	if m.pushTxResult.ID == 0 && m.pushTxErr == nil {
+		return repository.PushTaskResult{ID: int64(len(m.pushTxCalls))}, nil
+	}
+	return m.pushTxResult, m.pushTxErr
 }
 
-func (m *mockProducerRepo) PushTasks(_ context.Context, params repository.PushTasksParams) ([]int64, error) {
+func (m *mockProducerRepo) PushTasks(_ context.Context, params repository.PushTasksParams) ([]repository.PushTaskResult, error) {
 	m.pushManyCalls = append(m.pushManyCalls, params)
 	return m.pushManyResult, m.pushManyErr
 }
 
-func (m *mockProducerRepo) PushTasksWithExecutor(_ context.Context, _ asynqpg.Querier, params repository.PushTasksParams) ([]int64, error) {
+func (m *mockProducerRepo) PushTasksWithExecutor(_ context.Context, _ asynqpg.Querier, params repository.PushTasksParams) ([]repository.PushTaskResult, error) {
 	m.pushManyTxCalls = append(m.pushManyTxCalls, params)
 	return m.pushManyTxResult, m.pushManyTxErr
 }
@@ -86,15 +94,18 @@ func TestEnqueue_Success(t *testing.T) {
 	repo := &mockProducerRepo{}
 	p := newTestProducer(repo)
 
-	id, err := p.Enqueue(context.Background(), &asynqpg.Task{
+	result, err := p.Enqueue(context.Background(), &asynqpg.Task{
 		Type:    "email.send",
 		Payload: []byte(`{"to":"user@example.com"}`),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id == 0 {
+	if result.ID == 0 {
 		t.Fatal("expected non-zero task ID")
+	}
+	if result.Duplicate {
+		t.Fatal("expected Duplicate to be false for new task")
 	}
 
 	if len(repo.pushTaskCalls) != 1 {
@@ -266,6 +277,27 @@ func TestEnqueue_IdempotencyToken(t *testing.T) {
 	}
 }
 
+func TestEnqueue_Duplicate(t *testing.T) {
+	repo := &mockProducerRepo{
+		pushTaskResult: repository.PushTaskResult{ID: 42, Duplicate: true},
+	}
+	p := newTestProducer(repo)
+
+	result, err := p.Enqueue(context.Background(), &asynqpg.Task{
+		Type:    "test",
+		Payload: []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ID != 42 {
+		t.Fatalf("expected ID 42, got %d", result.ID)
+	}
+	if !result.Duplicate {
+		t.Fatal("expected Duplicate to be true")
+	}
+}
+
 // --- EnqueueTx Tests ---
 
 func TestEnqueueTx_Success(t *testing.T) {
@@ -332,7 +364,9 @@ func TestEnqueueTx_RepoError(t *testing.T) {
 
 func TestEnqueueMany_Success(t *testing.T) {
 	repo := &mockProducerRepo{
-		pushManyResult: []int64{1, 2, 3},
+		pushManyResult: []repository.PushTaskResult{
+			{ID: 1}, {ID: 2}, {ID: 3},
+		},
 	}
 	p := newTestProducer(repo)
 
@@ -342,12 +376,12 @@ func TestEnqueueMany_Success(t *testing.T) {
 		{Type: "sms", Payload: []byte(`{"id":3}`)},
 	}
 
-	ids, err := p.EnqueueMany(context.Background(), tasks)
+	result, err := p.EnqueueMany(context.Background(), tasks)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(ids) != 3 {
-		t.Fatalf("expected 3 IDs, got %d", len(ids))
+	if len(result.Results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(result.Results))
 	}
 
 	if len(repo.pushManyCalls) != 1 {
@@ -361,12 +395,12 @@ func TestEnqueueMany_Success(t *testing.T) {
 func TestEnqueueMany_Empty(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
 
-	ids, err := p.EnqueueMany(context.Background(), nil)
+	result, err := p.EnqueueMany(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(ids) != 0 {
-		t.Fatalf("expected empty slice, got %d IDs", len(ids))
+	if len(result.Results) != 0 {
+		t.Fatalf("expected empty results, got %d", len(result.Results))
 	}
 }
 
@@ -420,19 +454,21 @@ func TestEnqueueMany_RepoError(t *testing.T) {
 
 func TestEnqueueManyTx_Success(t *testing.T) {
 	repo := &mockProducerRepo{
-		pushManyTxResult: []int64{1, 2},
+		pushManyTxResult: []repository.PushTaskResult{
+			{ID: 1}, {ID: 2},
+		},
 	}
 	p := newTestProducer(repo)
 
-	ids, err := p.EnqueueManyTx(context.Background(), &mockExecutor{}, []*asynqpg.Task{
+	result, err := p.EnqueueManyTx(context.Background(), &mockExecutor{}, []*asynqpg.Task{
 		{Type: "test", Payload: []byte(`{"id":1}`)},
 		{Type: "test", Payload: []byte(`{"id":2}`)},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(ids) != 2 {
-		t.Fatalf("expected 2 IDs, got %d", len(ids))
+	if len(result.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(result.Results))
 	}
 
 	if len(repo.pushManyTxCalls) != 1 {
@@ -454,12 +490,12 @@ func TestEnqueueManyTx_NilExecutor(t *testing.T) {
 func TestEnqueueManyTx_Empty(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
 
-	ids, err := p.EnqueueManyTx(context.Background(), &mockExecutor{}, nil)
+	result, err := p.EnqueueManyTx(context.Background(), &mockExecutor{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(ids) != 0 {
-		t.Fatalf("expected empty slice, got %d IDs", len(ids))
+	if len(result.Results) != 0 {
+		t.Fatalf("expected empty results, got %d", len(result.Results))
 	}
 }
 

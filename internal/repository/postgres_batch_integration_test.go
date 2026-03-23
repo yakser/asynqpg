@@ -26,9 +26,13 @@ func TestPushTasks_Basic(t *testing.T) {
 		{Type: "batch-test", Payload: []byte(`{"id":3}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
 	}
 
-	ids, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
+	results, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
-	assert.Len(t, ids, 3)
+	assert.Len(t, results, 3)
+	for _, r := range results {
+		assert.False(t, r.Duplicate)
+		assert.NotZero(t, r.ID)
+	}
 }
 
 func TestPushTasks_EmptyArray(t *testing.T) {
@@ -36,9 +40,9 @@ func TestPushTasks_EmptyArray(t *testing.T) {
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
 
-	ids, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: []repository.PushTaskParams{}})
+	results, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: []repository.PushTaskParams{}})
 	require.NoError(t, err)
-	assert.Len(t, ids, 0)
+	assert.Len(t, results, 0)
 }
 
 func TestPushTasks_Idempotency(t *testing.T) {
@@ -52,14 +56,17 @@ func TestPushTasks_Idempotency(t *testing.T) {
 	}
 
 	// First insert
-	ids1, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
+	results1, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
-	assert.Len(t, ids1, 1)
+	assert.Len(t, results1, 1)
+	assert.False(t, results1[0].Duplicate)
 
-	// Second insert with same token - should be skipped
-	ids2, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
+	// Second insert with same token - flagged as duplicate
+	results2, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
-	assert.Len(t, ids2, 0) // No new tasks inserted
+	assert.Len(t, results2, 1)
+	assert.True(t, results2[0].Duplicate)
+	assert.Equal(t, results1[0].ID, results2[0].ID)
 }
 
 func TestCompleteTasksMany_Basic(t *testing.T) {
