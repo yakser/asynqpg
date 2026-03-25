@@ -1,3 +1,7 @@
+CREATE TYPE asynqpg_task_status AS ENUM (
+    'pending', 'running', 'completed', 'failed', 'cancelled'
+);
+
 CREATE TABLE IF NOT EXISTS asynqpg_tasks (
     id BIGSERIAL PRIMARY KEY,
 
@@ -12,8 +16,7 @@ CREATE TABLE IF NOT EXISTS asynqpg_tasks (
 
     type TEXT NOT NULL,
     idempotency_token TEXT,
-    status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+    status asynqpg_task_status NOT NULL DEFAULT 'pending',
     payload BYTEA NOT NULL,
     messages TEXT[] DEFAULT ARRAY[]::TEXT[] NOT NULL,
 

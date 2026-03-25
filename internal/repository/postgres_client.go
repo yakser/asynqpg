@@ -121,7 +121,7 @@ func (r *ClientRepository) listTasksInternal(ctx context.Context, q asynqpg.Quer
 	}
 
 	query := fmt.Sprintf(`SELECT %s FROM asynqpg_tasks
-		WHERE ($1::text[] IS NULL OR status = ANY($1))
+		WHERE ($1::asynqpg_task_status[] IS NULL OR status = ANY($1))
 		  AND ($2::text[] IS NULL OR type = ANY($2))
 		  AND ($3::bigint[] IS NULL OR id = ANY($3))
 		ORDER BY %s %s
@@ -151,7 +151,7 @@ func (r *ClientRepository) listTasksInternal(ctx context.Context, q asynqpg.Quer
 
 	// Count total matching rows
 	countQuery := `SELECT count(*) FROM asynqpg_tasks
-		WHERE ($1::text[] IS NULL OR status = ANY($1))
+		WHERE ($1::asynqpg_task_status[] IS NULL OR status = ANY($1))
 		  AND ($2::text[] IS NULL OR type = ANY($2))
 		  AND ($3::bigint[] IS NULL OR id = ANY($3))`
 

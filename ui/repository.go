@@ -128,7 +128,7 @@ func (r *repository) ListTasks(ctx context.Context, params ListTasksParams) (*Ta
 	}
 
 	query := fmt.Sprintf(`SELECT %s FROM asynqpg_tasks
-		WHERE ($1::text[] IS NULL OR status = ANY($1))
+		WHERE ($1::asynqpg_task_status[] IS NULL OR status = ANY($1))
 		  AND ($2::text[] IS NULL OR type = ANY($2))
 		  AND ($3::bigint[] IS NULL OR id = ANY($3))
 		  AND ($6::timestamptz IS NULL OR created_at >= $6)
@@ -161,7 +161,7 @@ func (r *repository) ListTasks(ctx context.Context, params ListTasksParams) (*Ta
 	}
 
 	countQuery := `SELECT count(*) FROM asynqpg_tasks
-		WHERE ($1::text[] IS NULL OR status = ANY($1))
+		WHERE ($1::asynqpg_task_status[] IS NULL OR status = ANY($1))
 		  AND ($2::text[] IS NULL OR type = ANY($2))
 		  AND ($3::bigint[] IS NULL OR id = ANY($3))
 		  AND ($4::timestamptz IS NULL OR created_at >= $4)
