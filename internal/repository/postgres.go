@@ -274,6 +274,7 @@ func (p *Repository) RetryTask(ctx context.Context, params RetryTaskParams) erro
 	const query = `
 	update asynqpg_tasks set
 		status = 'pending',
+		finalized_at = NULL,
 		blocked_till = $2,
 		attempts_left = attempts_left - 1,
 		attempts_elapsed = attempts_elapsed + 1,
@@ -396,6 +397,7 @@ func (p *Repository) RetryTasksMany(ctx context.Context, params RetryTasksManyPa
 	)
 	UPDATE asynqpg_tasks SET
 		status = 'pending',
+		finalized_at = NULL,
 		blocked_till = task_input.blocked_till,
 		attempts_left = asynqpg_tasks.attempts_left - 1,
 		attempts_elapsed = asynqpg_tasks.attempts_elapsed + 1,
@@ -434,6 +436,7 @@ func (p *Repository) SnoozeTask(ctx context.Context, params SnoozeTaskParams) er
 	const query = `
 	UPDATE asynqpg_tasks SET
 		status = 'pending',
+		finalized_at = NULL,
 		blocked_till = $2,
 		updated_at = now()
 	WHERE id = $1
@@ -472,6 +475,7 @@ func (p *Repository) SnoozeTasksMany(ctx context.Context, params SnoozeTasksMany
 	)
 	UPDATE asynqpg_tasks SET
 		status = 'pending',
+		finalized_at = NULL,
 		blocked_till = task_input.blocked_till,
 		updated_at = now()
 	FROM task_input

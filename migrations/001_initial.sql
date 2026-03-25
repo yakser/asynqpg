@@ -1,20 +1,31 @@
+CREATE TYPE asynqpg_task_status AS ENUM (
+    'pending', 'running', 'completed', 'failed', 'cancelled'
+);
+
 CREATE TABLE IF NOT EXISTS asynqpg_tasks (
     id BIGSERIAL PRIMARY KEY,
-    type VARCHAR(255) NOT NULL,
-    idempotency_token TEXT,
-    payload BYTEA NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
-    messages TEXT[] DEFAULT ARRAY[]::TEXT[] NOT NULL,
-    blocked_till TIMESTAMPTZ NOT NULL,
 
     attempts_left SMALLINT NOT NULL,
     attempts_elapsed SMALLINT DEFAULT 0 NOT NULL,
 
+    blocked_till TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     finalized_at TIMESTAMPTZ,
-    attempted_at TIMESTAMPTZ
+    attempted_at TIMESTAMPTZ,
+
+    type TEXT NOT NULL,
+    idempotency_token TEXT,
+    status asynqpg_task_status NOT NULL DEFAULT 'pending',
+    payload BYTEA NOT NULL,
+    messages TEXT[] DEFAULT ARRAY[]::TEXT[] NOT NULL,
+
+    CONSTRAINT finalized_or_finalized_at_null CHECK (
+        (finalized_at IS NULL AND status NOT IN ('completed', 'failed', 'cancelled'))
+        OR (finalized_at IS NOT NULL AND status IN ('completed', 'failed', 'cancelled'))
+    ),
+    CONSTRAINT type_length CHECK (char_length(type) > 0 AND char_length(type) < 256),
+    CONSTRAINT attempts_left_non_negative CHECK (attempts_left >= 0)
 ) WITH (fillfactor = 90);
 
 CREATE UNIQUE INDEX IF NOT EXISTS asynqpg_tasks_idempotency_idx

@@ -39,6 +39,16 @@ type TaskHandler interface {
 	Handle(ctx context.Context, task *asynqpg.TaskInfo) error
 }
 
+// Completer defines the interface for task completion operations.
+type Completer interface {
+	Start(ctx context.Context) error
+	Stop()
+	Complete(taskID int64) error
+	Fail(taskID int64, message string) error
+	Retry(taskID int64, blockedTill time.Time, message string) error
+	Snooze(taskID int64, blockedTill time.Time) error
+}
+
 type Consumer struct {
 	pool        asynqpg.Pool
 	repo        *repository.Repository
@@ -52,7 +62,7 @@ type Consumer struct {
 	maintainer *maintenance.Maintainer
 
 	// Batch completer for efficient DB operations
-	completer            completer.Completer
+	completer            Completer
 	enableBatchCompleter bool
 
 	// ErrorHandler for permanent task failures

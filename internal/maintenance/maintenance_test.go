@@ -131,14 +131,13 @@ func (s *mockService) Name() string {
 	return s.name
 }
 
-// ========== Cleaner Config Tests ==========
-
 func TestCleanerConfig_SetDefaults(t *testing.T) {
 	t.Parallel()
 
 	cfg := CleanerConfig{}
 	cfg.setDefaults()
 
+	// fixme: use require.Equal?
 	if cfg.CompletedRetention != defaultCompletedRetention {
 		t.Fatalf("expected CompletedRetention %v, got %v", defaultCompletedRetention, cfg.CompletedRetention)
 	}
@@ -181,8 +180,6 @@ func TestCleanerConfig_SetDefaults_CustomValues(t *testing.T) {
 		t.Fatalf("expected 500, got %d", cfg.BatchSize)
 	}
 }
-
-// ========== Cleaner Tests ==========
 
 func TestCleaner_Name(t *testing.T) {
 	t.Parallel()
@@ -345,8 +342,6 @@ func TestCleaner_Stop_NotStarted(t *testing.T) {
 	c.Stop()
 }
 
-// ========== Rescuer Config Tests ==========
-
 func TestRescuerConfig_SetDefaults(t *testing.T) {
 	t.Parallel()
 
@@ -391,10 +386,10 @@ func TestRescuerConfig_SetDefaults_NegativeValues(t *testing.T) {
 	}
 }
 
-// ========== Rescuer Tests ==========
-
 func TestRescuer_Name(t *testing.T) {
 	t.Parallel()
+
+	// fixme: this is useless test
 
 	r := NewRescuer(&mockRescuerRepo{}, RescuerConfig{})
 	if r.Name() != "rescuer" {
@@ -692,8 +687,6 @@ func TestRescuer_Stop_NotStarted(t *testing.T) {
 	// Should not panic
 	r.Stop()
 }
-
-// ========== Maintainer Tests ==========
 
 func TestMaintainer_NewMaintainer_NilLogger(t *testing.T) {
 	t.Parallel()
