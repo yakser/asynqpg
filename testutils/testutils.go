@@ -19,6 +19,7 @@ import (
 )
 
 const (
+	// todo: run integration tests with different postgres images?
 	postgresImage    = "postgres:17-alpine"
 	postgresUser     = "test"
 	postgresPassword = "test"
