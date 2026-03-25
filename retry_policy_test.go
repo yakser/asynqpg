@@ -1,8 +1,11 @@
 package asynqpg
 
 import (
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDefaultRetryPolicy_NextRetry(t *testing.T) {
@@ -11,9 +14,9 @@ func TestDefaultRetryPolicy_NextRetry(t *testing.T) {
 	policy := &DefaultRetryPolicy{}
 
 	tests := []struct {
-		attempt     int
-		minExpected time.Duration
-		maxExpected time.Duration
+		attempt int
+		wantMin time.Duration
+		wantMax time.Duration
 	}{
 		{1, 900 * time.Millisecond, 1100 * time.Millisecond},    // 1^4 = 1s ± 10%
 		{2, 14400 * time.Millisecond, 17600 * time.Millisecond}, // 2^4 = 16s ± 10%
@@ -21,14 +24,12 @@ func TestDefaultRetryPolicy_NextRetry(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
+		t.Run(fmt.Sprintf("attempt_%d", tt.attempt), func(t *testing.T) {
 			t.Parallel()
 
 			delay := policy.NextRetry(tt.attempt)
-			if delay < tt.minExpected || delay > tt.maxExpected {
-				t.Errorf("attempt %d: got %v, want between %v and %v",
-					tt.attempt, delay, tt.minExpected, tt.maxExpected)
-			}
+			assert.GreaterOrEqual(t, delay, tt.wantMin, "attempt %d", tt.attempt)
+			assert.LessOrEqual(t, delay, tt.wantMax, "attempt %d", tt.attempt)
 		})
 	}
 }
@@ -42,9 +43,7 @@ func TestDefaultRetryPolicy_MaxDelay(t *testing.T) {
 
 	// Very high attempt should be capped at max
 	delay := policy.NextRetry(100)
-	if delay > 1*time.Hour {
-		t.Errorf("expected delay <= 1h, got %v", delay)
-	}
+	assert.LessOrEqual(t, delay, 1*time.Hour)
 }
 
 func TestConstantRetryPolicy(t *testing.T) {
@@ -56,8 +55,6 @@ func TestConstantRetryPolicy(t *testing.T) {
 
 	for i := 1; i <= 10; i++ {
 		delay := policy.NextRetry(i)
-		if delay != 5*time.Second {
-			t.Errorf("attempt %d: got %v, want 5s", i, delay)
-		}
+		assert.Equal(t, 5*time.Second, delay, "attempt %d", i)
 	}
 }
