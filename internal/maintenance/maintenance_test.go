@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/yakser/asynqpg/internal/repository"
 )
-
-// --- Mock Cleaner Repo ---
 
 type mockCleanerRepo struct {
 	mu      sync.Mutex
@@ -50,8 +50,6 @@ func (m *mockCleanerRepo) getCall(i int) repository.DeleteOldTasksParams {
 	defer m.mu.Unlock()
 	return m.calls[i]
 }
-
-// --- Mock Rescuer Repo ---
 
 type mockRescuerRepo struct {
 	mu             sync.Mutex
@@ -99,8 +97,6 @@ func (m *mockRescuerRepo) FailTasks(_ context.Context, ids []int64, message stri
 	return m.failErr
 }
 
-// --- Mock Retry Policy ---
-
 type constantRetryPolicy struct {
 	delay time.Duration
 }
@@ -108,8 +104,6 @@ type constantRetryPolicy struct {
 func (p *constantRetryPolicy) NextRetry(_ int) time.Duration {
 	return p.delay
 }
-
-// --- Mock Service ---
 
 type mockService struct {
 	name     string
@@ -137,25 +131,12 @@ func TestCleanerConfig_SetDefaults(t *testing.T) {
 	cfg := CleanerConfig{}
 	cfg.setDefaults()
 
-	// fixme: use require.Equal?
-	if cfg.CompletedRetention != defaultCompletedRetention {
-		t.Fatalf("expected CompletedRetention %v, got %v", defaultCompletedRetention, cfg.CompletedRetention)
-	}
-	if cfg.FailedRetention != defaultFailedRetention {
-		t.Fatalf("expected FailedRetention %v, got %v", defaultFailedRetention, cfg.FailedRetention)
-	}
-	if cfg.CancelledRetention != defaultCancelledRetention {
-		t.Fatalf("expected CancelledRetention %v, got %v", defaultCancelledRetention, cfg.CancelledRetention)
-	}
-	if cfg.Interval != defaultCleanerInterval {
-		t.Fatalf("expected Interval %v, got %v", defaultCleanerInterval, cfg.Interval)
-	}
-	if cfg.BatchSize != defaultCleanerBatchSize {
-		t.Fatalf("expected BatchSize %d, got %d", defaultCleanerBatchSize, cfg.BatchSize)
-	}
-	if cfg.Logger == nil {
-		t.Fatal("expected Logger to be set")
-	}
+	require.Equal(t, defaultCompletedRetention, cfg.CompletedRetention)
+	require.Equal(t, defaultFailedRetention, cfg.FailedRetention)
+	require.Equal(t, defaultCancelledRetention, cfg.CancelledRetention)
+	require.Equal(t, defaultCleanerInterval, cfg.Interval)
+	require.Equal(t, defaultCleanerBatchSize, cfg.BatchSize)
+	require.NotNil(t, cfg.Logger)
 }
 
 func TestCleanerConfig_SetDefaults_CustomValues(t *testing.T) {
@@ -170,24 +151,16 @@ func TestCleanerConfig_SetDefaults_CustomValues(t *testing.T) {
 	}
 	cfg.setDefaults()
 
-	if cfg.CompletedRetention != 2*time.Hour {
-		t.Fatalf("expected 2h, got %v", cfg.CompletedRetention)
-	}
-	if cfg.FailedRetention != 48*time.Hour {
-		t.Fatalf("expected 48h, got %v", cfg.FailedRetention)
-	}
-	if cfg.BatchSize != 500 {
-		t.Fatalf("expected 500, got %d", cfg.BatchSize)
-	}
+	require.Equal(t, 2*time.Hour, cfg.CompletedRetention)
+	require.Equal(t, 48*time.Hour, cfg.FailedRetention)
+	require.Equal(t, 500, cfg.BatchSize)
 }
 
 func TestCleaner_Name(t *testing.T) {
 	t.Parallel()
 
 	c := NewCleaner(&mockCleanerRepo{}, CleanerConfig{})
-	if c.Name() != "cleaner" {
-		t.Fatalf("expected %q, got %q", "cleaner", c.Name())
-	}
+	require.Equal(t, "cleaner", c.Name())
 }
 
 func TestCleaner_RunOnce_NoTasks(t *testing.T) {
@@ -199,12 +172,8 @@ func TestCleaner_RunOnce_NoTasks(t *testing.T) {
 	c := NewCleaner(repo, CleanerConfig{BatchSize: 100})
 
 	err := c.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if repo.callCount() != 1 {
-		t.Fatalf("expected 1 call, got %d", repo.callCount())
-	}
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.callCount())
 }
 
 func TestCleaner_RunOnce_SingleBatch(t *testing.T) {
@@ -216,12 +185,8 @@ func TestCleaner_RunOnce_SingleBatch(t *testing.T) {
 	c := NewCleaner(repo, CleanerConfig{BatchSize: 100})
 
 	err := c.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if repo.callCount() != 1 {
-		t.Fatalf("expected 1 call (50 < 100 batch), got %d", repo.callCount())
-	}
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.callCount())
 }
 
 func TestCleaner_RunOnce_MultipleBatches(t *testing.T) {
@@ -236,12 +201,8 @@ func TestCleaner_RunOnce_MultipleBatches(t *testing.T) {
 	c := NewCleaner(repo, CleanerConfig{BatchSize: 100})
 
 	err := c.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if repo.callCount() != 2 {
-		t.Fatalf("expected 2 calls, got %d", repo.callCount())
-	}
+	require.NoError(t, err)
+	require.Equal(t, 2, repo.callCount())
 }
 
 func TestCleaner_RunOnce_RepoError(t *testing.T) {
@@ -253,9 +214,7 @@ func TestCleaner_RunOnce_RepoError(t *testing.T) {
 	c := NewCleaner(repo, CleanerConfig{BatchSize: 100})
 
 	err := c.runOnce(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	require.Error(t, err)
 }
 
 func TestCleaner_RetentionParams(t *testing.T) {
@@ -273,27 +232,17 @@ func TestCleaner_RetentionParams(t *testing.T) {
 
 	before := time.Now()
 	err := c.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	params := repo.getCall(0)
-	if params.Limit != 500 {
-		t.Fatalf("expected Limit 500, got %d", params.Limit)
-	}
+	require.Equal(t, 500, params.Limit)
 
 	// CompletedBefore should be approximately now - 1 hour
 	expectedCompleted := before.Add(-time.Hour)
-	if params.CompletedBefore.Before(expectedCompleted.Add(-time.Second)) ||
-		params.CompletedBefore.After(expectedCompleted.Add(time.Second)) {
-		t.Fatalf("CompletedBefore out of range: expected ~%v, got %v", expectedCompleted, params.CompletedBefore)
-	}
+	require.WithinDuration(t, expectedCompleted, params.CompletedBefore, time.Second)
 
 	expectedFailed := before.Add(-24 * time.Hour)
-	if params.FailedBefore.Before(expectedFailed.Add(-time.Second)) ||
-		params.FailedBefore.After(expectedFailed.Add(time.Second)) {
-		t.Fatalf("FailedBefore out of range: expected ~%v, got %v", expectedFailed, params.FailedBefore)
-	}
+	require.WithinDuration(t, expectedFailed, params.FailedBefore, time.Second)
 }
 
 func TestCleaner_StartStop(t *testing.T) {
@@ -304,10 +253,7 @@ func TestCleaner_StartStop(t *testing.T) {
 	}
 	c := NewCleaner(repo, CleanerConfig{Interval: 50 * time.Millisecond})
 
-	err := c.Start(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, c.Start(context.Background()))
 
 	time.Sleep(100 * time.Millisecond)
 	c.Stop()
@@ -321,16 +267,10 @@ func TestCleaner_Start_Idempotent(t *testing.T) {
 	}
 	c := NewCleaner(repo, CleanerConfig{Interval: time.Hour})
 
-	err := c.Start(context.Background())
-	if err != nil {
-		t.Fatalf("first start: %v", err)
-	}
+	require.NoError(t, c.Start(context.Background()))
 	defer c.Stop()
 
-	err = c.Start(context.Background())
-	if err != nil {
-		t.Fatalf("second start should return nil, got: %v", err)
-	}
+	require.NoError(t, c.Start(context.Background()))
 }
 
 func TestCleaner_Stop_NotStarted(t *testing.T) {
@@ -348,21 +288,11 @@ func TestRescuerConfig_SetDefaults(t *testing.T) {
 	cfg := RescuerConfig{}
 	cfg.setDefaults()
 
-	if cfg.RescueAfter != defaultRescueAfter {
-		t.Fatalf("expected RescueAfter %v, got %v", defaultRescueAfter, cfg.RescueAfter)
-	}
-	if cfg.Interval != defaultRescueInterval {
-		t.Fatalf("expected Interval %v, got %v", defaultRescueInterval, cfg.Interval)
-	}
-	if cfg.BatchSize != defaultRescueBatchSize {
-		t.Fatalf("expected BatchSize %d, got %d", defaultRescueBatchSize, cfg.BatchSize)
-	}
-	if cfg.RetryPolicy == nil {
-		t.Fatal("expected RetryPolicy to be set")
-	}
-	if cfg.Logger == nil {
-		t.Fatal("expected Logger to be set")
-	}
+	require.Equal(t, defaultRescueAfter, cfg.RescueAfter)
+	require.Equal(t, defaultRescueInterval, cfg.Interval)
+	require.Equal(t, defaultRescueBatchSize, cfg.BatchSize)
+	require.NotNil(t, cfg.RetryPolicy)
+	require.NotNil(t, cfg.Logger)
 }
 
 func TestRescuerConfig_SetDefaults_NegativeValues(t *testing.T) {
@@ -375,26 +305,16 @@ func TestRescuerConfig_SetDefaults_NegativeValues(t *testing.T) {
 	}
 	cfg.setDefaults()
 
-	if cfg.RescueAfter != defaultRescueAfter {
-		t.Fatalf("expected default RescueAfter, got %v", cfg.RescueAfter)
-	}
-	if cfg.Interval != defaultRescueInterval {
-		t.Fatalf("expected default Interval, got %v", cfg.Interval)
-	}
-	if cfg.BatchSize != defaultRescueBatchSize {
-		t.Fatalf("expected default BatchSize, got %d", cfg.BatchSize)
-	}
+	require.Equal(t, defaultRescueAfter, cfg.RescueAfter)
+	require.Equal(t, defaultRescueInterval, cfg.Interval)
+	require.Equal(t, defaultRescueBatchSize, cfg.BatchSize)
 }
 
 func TestRescuer_Name(t *testing.T) {
 	t.Parallel()
 
-	// fixme: this is useless test
-
 	r := NewRescuer(&mockRescuerRepo{}, RescuerConfig{})
-	if r.Name() != "rescuer" {
-		t.Fatalf("expected %q, got %q", "rescuer", r.Name())
-	}
+	require.Equal(t, "rescuer", r.Name())
 }
 
 func TestRescuer_RunOnce_NoStuckTasks(t *testing.T) {
@@ -406,9 +326,7 @@ func TestRescuer_RunOnce_NoStuckTasks(t *testing.T) {
 	r := NewRescuer(repo, RescuerConfig{BatchSize: 100})
 
 	err := r.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestRescuer_RunOnce_RetryTasks(t *testing.T) {
@@ -428,25 +346,15 @@ func TestRescuer_RunOnce_RetryTasks(t *testing.T) {
 	})
 
 	err := r.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
 
-	if len(repo.retryParams) != 2 {
-		t.Fatalf("expected 2 retry calls, got %d", len(repo.retryParams))
-	}
-	if repo.retryParams[0].ID != 1 {
-		t.Fatalf("expected retry task ID 1, got %d", repo.retryParams[0].ID)
-	}
-	if repo.retryParams[1].ID != 2 {
-		t.Fatalf("expected retry task ID 2, got %d", repo.retryParams[1].ID)
-	}
-	if repo.retryParams[0].Message != "Stuck task rescued by Rescuer" {
-		t.Fatalf("unexpected message: %q", repo.retryParams[0].Message)
-	}
+	require.Len(t, repo.retryParams, 2)
+	require.Equal(t, int64(1), repo.retryParams[0].ID)
+	require.Equal(t, int64(2), repo.retryParams[1].ID)
+	require.Equal(t, "Stuck task rescued by Rescuer", repo.retryParams[0].Message)
 }
 
 func TestRescuer_RunOnce_DiscardTasks(t *testing.T) {
@@ -463,22 +371,14 @@ func TestRescuer_RunOnce_DiscardTasks(t *testing.T) {
 	r := NewRescuer(repo, RescuerConfig{BatchSize: 100})
 
 	err := r.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
 
-	if len(repo.failCalls) != 2 {
-		t.Fatalf("expected 2 fail calls, got %d", len(repo.failCalls))
-	}
-	if repo.failCalls[0].ids[0] != 10 {
-		t.Fatalf("expected fail task ID 10, got %d", repo.failCalls[0].ids[0])
-	}
-	if repo.failCalls[1].ids[0] != 11 {
-		t.Fatalf("expected fail task ID 11, got %d", repo.failCalls[1].ids[0])
-	}
+	require.Len(t, repo.failCalls, 2)
+	require.Equal(t, int64(10), repo.failCalls[0].ids[0])
+	require.Equal(t, int64(11), repo.failCalls[1].ids[0])
 }
 
 func TestRescuer_RunOnce_MixedTasks(t *testing.T) {
@@ -499,19 +399,13 @@ func TestRescuer_RunOnce_MixedTasks(t *testing.T) {
 	})
 
 	err := r.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
 
-	if len(repo.retryParams) != 2 {
-		t.Fatalf("expected 2 retries, got %d", len(repo.retryParams))
-	}
-	if len(repo.failCalls) != 1 {
-		t.Fatalf("expected 1 discard, got %d", len(repo.failCalls))
-	}
+	require.Len(t, repo.retryParams, 2)
+	require.Len(t, repo.failCalls, 1)
 }
 
 func TestRescuer_RunOnce_MultipleBatches(t *testing.T) {
@@ -534,19 +428,13 @@ func TestRescuer_RunOnce_MultipleBatches(t *testing.T) {
 	})
 
 	err := r.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
 
-	if repo.stuckCallCount != 2 {
-		t.Fatalf("expected 2 GetStuckTasks calls, got %d", repo.stuckCallCount)
-	}
-	if len(repo.retryParams) != 3 {
-		t.Fatalf("expected 3 retries total, got %d", len(repo.retryParams))
-	}
+	require.Equal(t, 2, repo.stuckCallCount)
+	require.Len(t, repo.retryParams, 3)
 }
 
 func TestRescuer_RunOnce_GetStuckError(t *testing.T) {
@@ -560,9 +448,7 @@ func TestRescuer_RunOnce_GetStuckError(t *testing.T) {
 	r := NewRescuer(repo, RescuerConfig{BatchSize: 100})
 
 	err := r.runOnce(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	require.Error(t, err)
 }
 
 func TestRescuer_RunOnce_RetryError(t *testing.T) {
@@ -582,9 +468,7 @@ func TestRescuer_RunOnce_RetryError(t *testing.T) {
 	})
 
 	err := r.runOnce(context.Background())
-	if err == nil {
-		t.Fatal("expected error from RetryTask")
-	}
+	require.Error(t, err)
 }
 
 func TestRescuer_RunOnce_FailError(t *testing.T) {
@@ -601,9 +485,7 @@ func TestRescuer_RunOnce_FailError(t *testing.T) {
 	r := NewRescuer(repo, RescuerConfig{BatchSize: 100})
 
 	err := r.runOnce(context.Background())
-	if err == nil {
-		t.Fatal("expected error from FailTasks")
-	}
+	require.Error(t, err)
 }
 
 func TestRescuer_RetryPolicy_Applied(t *testing.T) {
@@ -623,23 +505,16 @@ func TestRescuer_RetryPolicy_Applied(t *testing.T) {
 
 	before := time.Now()
 	err := r.runOnce(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
 
-	if len(repo.retryParams) != 1 {
-		t.Fatalf("expected 1 retry call, got %d", len(repo.retryParams))
-	}
+	require.Len(t, repo.retryParams, 1)
 
 	// BlockedTill should be approximately now + 10 seconds
 	expectedBlockedTill := before.Add(10 * time.Second)
-	diff := repo.retryParams[0].BlockedTill.Sub(expectedBlockedTill)
-	if diff < -time.Second || diff > time.Second {
-		t.Fatalf("BlockedTill out of range: expected ~%v, got %v", expectedBlockedTill, repo.retryParams[0].BlockedTill)
-	}
+	require.WithinDuration(t, expectedBlockedTill, repo.retryParams[0].BlockedTill, time.Second)
 }
 
 func TestRescuer_StartStop(t *testing.T) {
@@ -650,10 +525,7 @@ func TestRescuer_StartStop(t *testing.T) {
 	}
 	r := NewRescuer(repo, RescuerConfig{Interval: 50 * time.Millisecond})
 
-	err := r.Start(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, r.Start(context.Background()))
 
 	time.Sleep(100 * time.Millisecond)
 	r.Stop()
@@ -667,16 +539,10 @@ func TestRescuer_Start_Idempotent(t *testing.T) {
 	}
 	r := NewRescuer(repo, RescuerConfig{Interval: time.Hour})
 
-	err := r.Start(context.Background())
-	if err != nil {
-		t.Fatalf("first start: %v", err)
-	}
+	require.NoError(t, r.Start(context.Background()))
 	defer r.Stop()
 
-	err = r.Start(context.Background())
-	if err != nil {
-		t.Fatalf("second start should return nil, got: %v", err)
-	}
+	require.NoError(t, r.Start(context.Background()))
 }
 
 func TestRescuer_Stop_NotStarted(t *testing.T) {
@@ -692,9 +558,7 @@ func TestMaintainer_NewMaintainer_NilLogger(t *testing.T) {
 	t.Parallel()
 
 	m := NewMaintainer(nil)
-	if m.logger == nil {
-		t.Fatal("expected default logger")
-	}
+	require.NotNil(t, m.logger)
 }
 
 func TestMaintainer_Start_StartsAllServices(t *testing.T) {
@@ -704,21 +568,14 @@ func TestMaintainer_Start_StartsAllServices(t *testing.T) {
 	svc2 := &mockService{name: "svc2"}
 	m := NewMaintainer(nil, svc1, svc2)
 
-	err := m.Start(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, m.Start(context.Background()))
 	defer m.Stop()
 
 	// Wait for goroutines to start services
 	time.Sleep(50 * time.Millisecond)
 
-	if !svc1.started.Load() {
-		t.Fatal("expected svc1 to be started")
-	}
-	if !svc2.started.Load() {
-		t.Fatal("expected svc2 to be started")
-	}
+	require.True(t, svc1.started.Load())
+	require.True(t, svc2.started.Load())
 }
 
 func TestMaintainer_Stop_StopsAllServices(t *testing.T) {
@@ -728,20 +585,13 @@ func TestMaintainer_Stop_StopsAllServices(t *testing.T) {
 	svc2 := &mockService{name: "svc2"}
 	m := NewMaintainer(nil, svc1, svc2)
 
-	err := m.Start(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, m.Start(context.Background()))
 
 	time.Sleep(50 * time.Millisecond)
 	m.Stop()
 
-	if !svc1.stopped.Load() {
-		t.Fatal("expected svc1 to be stopped")
-	}
-	if !svc2.stopped.Load() {
-		t.Fatal("expected svc2 to be stopped")
-	}
+	require.True(t, svc1.stopped.Load())
+	require.True(t, svc2.stopped.Load())
 }
 
 func TestMaintainer_Start_Idempotent(t *testing.T) {
@@ -750,16 +600,10 @@ func TestMaintainer_Start_Idempotent(t *testing.T) {
 	svc := &mockService{name: "svc"}
 	m := NewMaintainer(nil, svc)
 
-	err := m.Start(context.Background())
-	if err != nil {
-		t.Fatalf("first start: %v", err)
-	}
+	require.NoError(t, m.Start(context.Background()))
 	defer m.Stop()
 
-	err = m.Start(context.Background())
-	if err != nil {
-		t.Fatalf("second start should return nil, got: %v", err)
-	}
+	require.NoError(t, m.Start(context.Background()))
 }
 
 func TestMaintainer_Stop_NotStarted(t *testing.T) {
@@ -775,24 +619,15 @@ func TestMaintainer_IsStarted(t *testing.T) {
 
 	m := NewMaintainer(nil, &mockService{name: "svc"})
 
-	if m.IsStarted() {
-		t.Fatal("expected not started initially")
-	}
+	require.False(t, m.IsStarted())
 
-	err := m.Start(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, m.Start(context.Background()))
 
-	if !m.IsStarted() {
-		t.Fatal("expected started after Start()")
-	}
+	require.True(t, m.IsStarted())
 
 	m.Stop()
 
-	if m.IsStarted() {
-		t.Fatal("expected not started after Stop()")
-	}
+	require.False(t, m.IsStarted())
 }
 
 func TestMaintainer_ServiceStartError(t *testing.T) {
@@ -802,21 +637,14 @@ func TestMaintainer_ServiceStartError(t *testing.T) {
 	svc2 := &mockService{name: "working"}
 	m := NewMaintainer(nil, svc1, svc2)
 
-	err := m.Start(context.Background())
-	if err != nil {
-		t.Fatalf("maintainer start should not fail: %v", err)
-	}
+	require.NoError(t, m.Start(context.Background()))
 
 	time.Sleep(50 * time.Millisecond)
 	m.Stop()
 
 	// Both services should have been attempted
-	if !svc1.started.Load() {
-		t.Fatal("expected failing service Start() to be called")
-	}
-	if !svc2.started.Load() {
-		t.Fatal("expected working service to be started")
-	}
+	require.True(t, svc1.started.Load())
+	require.True(t, svc2.started.Load())
 }
 
 func TestMaintainer_NoServices(t *testing.T) {
@@ -824,10 +652,7 @@ func TestMaintainer_NoServices(t *testing.T) {
 
 	m := NewMaintainer(nil)
 
-	err := m.Start(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, m.Start(context.Background()))
 
 	m.Stop()
 }

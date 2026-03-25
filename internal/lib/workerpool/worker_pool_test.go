@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func waitUntil(t *testing.T, cond func() bool, timeout time.Duration) {
@@ -32,12 +34,11 @@ func TestWorkerPoolExecutesAllTasks(t *testing.T) {
 	wg.Add(n)
 
 	for i := 0; i < n; i++ {
-		if err := pool.Submit(func() {
+		err := pool.Submit(func() {
 			atomic.AddInt64(&done, 1)
 			wg.Done()
-		}); err != nil {
-			t.Fatalf("unexpected error on Submit: %v", err)
-		}
+		})
+		require.NoError(t, err)
 	}
 
 	doneCh := make(chan struct{})
@@ -52,9 +53,7 @@ func TestWorkerPoolExecutesAllTasks(t *testing.T) {
 		t.Fatal("timeout waiting for tasks")
 	}
 
-	if got := atomic.LoadInt64(&done); got != n {
-		t.Fatalf("expected %d tasks done, got %d", n, got)
-	}
+	require.Equal(t, int64(n), atomic.LoadInt64(&done))
 }
 
 func TestWorkerPoolResizeIncrease(t *testing.T) {
@@ -92,9 +91,8 @@ func TestWorkerPoolResizeIncrease(t *testing.T) {
 	}
 
 	for i := 0; i < tasksCount; i++ {
-		if err := pool.Submit(work); err != nil {
-			t.Fatalf("unexpected error on Submit: %v", err)
-		}
+		err := pool.Submit(work)
+		require.NoError(t, err)
 		if i == 5 {
 			pool.Resize(8)
 		}
@@ -112,9 +110,7 @@ func TestWorkerPoolResizeIncrease(t *testing.T) {
 		t.Fatal("timeout waiting for tasks after resize")
 	}
 
-	if maxObservedParallelism < 2 {
-		t.Fatalf("expected parallelism to increase after resize, got %d", maxObservedParallelism)
-	}
+	require.GreaterOrEqual(t, maxObservedParallelism, int64(2), "expected parallelism to increase after resize")
 }
 
 func TestWorkerPoolResizeDecreaseNoDeadlock(t *testing.T) {
@@ -127,12 +123,11 @@ func TestWorkerPoolResizeDecreaseNoDeadlock(t *testing.T) {
 	wg.Add(tasksCount)
 
 	for i := 0; i < tasksCount; i++ {
-		if err := pool.Submit(func() {
+		err := pool.Submit(func() {
 			time.Sleep(5 * time.Millisecond)
 			wg.Done()
-		}); err != nil {
-			t.Fatalf("unexpected error on Submit: %v", err)
-		}
+		})
+		require.NoError(t, err)
 		if i == 10 {
 			pool.Resize(2)
 		}
@@ -157,15 +152,13 @@ func TestWorkerPoolSubmitAfterClose(t *testing.T) {
 
 	pool := NewWorkerPool(2)
 
-	if err := pool.Submit(func() {}); err != nil {
-		t.Fatalf("unexpected error on Submit before Close: %v", err)
-	}
+	err := pool.Submit(func() {})
+	require.NoError(t, err)
 
 	pool.Close()
 
-	if err := pool.Submit(func() {}); err == nil {
-		t.Fatal("expected error on Submit after Close, got nil")
-	}
+	err = pool.Submit(func() {})
+	require.Error(t, err)
 }
 
 func TestWorkerPoolCloseIdempotent(t *testing.T) {
@@ -173,9 +166,8 @@ func TestWorkerPoolCloseIdempotent(t *testing.T) {
 
 	pool := NewWorkerPool(2)
 
-	if err := pool.Submit(func() {}); err != nil {
-		t.Fatalf("unexpected error on Submit: %v", err)
-	}
+	err := pool.Submit(func() {})
+	require.NoError(t, err)
 
 	pool.Close()
 
@@ -265,18 +257,14 @@ func TestWorkerPool_SubmitNilTask(t *testing.T) {
 	t.Cleanup(pool.Close)
 
 	err := pool.Submit(nil)
-	if err != nil {
-		t.Fatalf("unexpected error on Submit(nil): %v", err)
-	}
+	require.NoError(t, err)
 
 	// Verify the pool is still functional after submitting nil.
 	done := make(chan struct{})
 	err = pool.Submit(func() {
 		close(done)
 	})
-	if err != nil {
-		t.Fatalf("unexpected error on Submit after nil: %v", err)
-	}
+	require.NoError(t, err)
 
 	select {
 	case <-done:

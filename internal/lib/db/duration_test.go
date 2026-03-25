@@ -3,33 +3,29 @@ package db
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewDuration(t *testing.T) {
 	t.Parallel()
 
 	d := NewDuration(5 * time.Second)
-	if d.Duration() != 5*time.Second {
-		t.Fatalf("expected 5s, got %v", d.Duration())
-	}
+	require.Equal(t, 5*time.Second, d.Duration())
 }
 
 func TestDuration_IsZero_True(t *testing.T) {
 	t.Parallel()
 
 	d := NewDuration(0)
-	if !d.IsZero() {
-		t.Fatal("expected IsZero to return true for zero duration")
-	}
+	require.True(t, d.IsZero())
 }
 
 func TestDuration_IsZero_False(t *testing.T) {
 	t.Parallel()
 
 	d := NewDuration(time.Second)
-	if d.IsZero() {
-		t.Fatal("expected IsZero to return false for non-zero duration")
-	}
+	require.False(t, d.IsZero())
 }
 
 func TestDuration_Value(t *testing.T) {
@@ -37,17 +33,12 @@ func TestDuration_Value(t *testing.T) {
 
 	d := NewDuration(1500 * time.Millisecond)
 	v, err := d.Value()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 	s, ok := v.(string)
-	if !ok {
-		t.Fatalf("expected string value, got %T", v)
-	}
-	expected := (1500 * time.Millisecond).String()
-	if s != expected {
-		t.Fatalf("expected %q, got %q", expected, s)
-	}
+	require.True(t, ok, "expected string value, got %T", v)
+
+	want := (1500 * time.Millisecond).String()
+	require.Equal(t, want, s)
 }
 
 func TestDuration_Value_RoundsToMilliseconds(t *testing.T) {
@@ -56,14 +47,11 @@ func TestDuration_Value_RoundsToMilliseconds(t *testing.T) {
 	// 1500100 nanoseconds should be rounded to 1.5ms
 	d := NewDuration(1500100 * time.Nanosecond)
 	v, err := d.Value()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
+
 	s := v.(string)
-	expected := (1500100 * time.Nanosecond).Round(time.Millisecond).String()
-	if s != expected {
-		t.Fatalf("expected %q (rounded), got %q", expected, s)
-	}
+	want := (1500100 * time.Nanosecond).Round(time.Millisecond).String()
+	require.Equal(t, want, s)
 }
 
 func TestDuration_Duration(t *testing.T) {
@@ -71,9 +59,7 @@ func TestDuration_Duration(t *testing.T) {
 
 	original := 3*time.Hour + 15*time.Minute
 	d := NewDuration(original)
-	if d.Duration() != original {
-		t.Fatalf("expected %v, got %v", original, d.Duration())
-	}
+	require.Equal(t, original, d.Duration())
 }
 
 func TestDuration_String(t *testing.T) {
@@ -82,7 +68,7 @@ func TestDuration_String(t *testing.T) {
 	tests := []struct {
 		name     string
 		duration time.Duration
-		expected string
+		want     string
 	}{
 		{"zero", 0, "0s"},
 		{"1 second", time.Second, "1s"},
@@ -97,9 +83,7 @@ func TestDuration_String(t *testing.T) {
 			t.Parallel()
 
 			d := NewDuration(tt.duration)
-			if d.String() != tt.expected {
-				t.Fatalf("expected %q, got %q", tt.expected, d.String())
-			}
+			require.Equal(t, tt.want, d.String())
 		})
 	}
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
+	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -54,9 +55,7 @@ func setupDatabase(tb testing.TB, maxOpenConns int) (*sqlx.DB, string) {
 				WithStartupTimeout(60*time.Second),
 		),
 	)
-	if err != nil {
-		tb.Fatalf("failed to start postgres container: %v", err)
-	}
+	require.NoError(tb, err, "failed to start postgres container")
 
 	tb.Cleanup(func() {
 		if terminateErr := pgContainer.Terminate(ctx); terminateErr != nil {
@@ -65,14 +64,10 @@ func setupDatabase(tb testing.TB, maxOpenConns int) (*sqlx.DB, string) {
 	})
 
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		tb.Fatalf("failed to get connection string: %v", err)
-	}
+	require.NoError(tb, err, "failed to get connection string")
 
 	db, err := sqlx.Connect("postgres", connStr)
-	if err != nil {
-		tb.Fatalf("failed to connect to test database: %v", err)
-	}
+	require.NoError(tb, err, "failed to connect to test database")
 
 	db.SetMaxOpenConns(maxOpenConns)
 	db.SetMaxIdleConns(maxOpenConns / 2)
@@ -134,13 +129,9 @@ func applyMigrations(tb testing.TB, db *sqlx.DB) {
 	for _, file := range migrationFiles {
 		migrationPath := filepath.Join(migrationsDir, file)
 		migrationSQL, err := os.ReadFile(migrationPath)
-		if err != nil {
-			tb.Fatalf("failed to read migration file %s: %v", migrationPath, err)
-		}
+		require.NoError(tb, err, "failed to read migration file %s", migrationPath)
 
 		_, err = db.Exec(string(migrationSQL))
-		if err != nil {
-			tb.Fatalf("failed to apply migration %s: %v", file, err)
-		}
+		require.NoError(tb, err, "failed to apply migration %s", file)
 	}
 }

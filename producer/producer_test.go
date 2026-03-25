@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/internal/lib/ptr"
 	"github.com/yakser/asynqpg/internal/repository"
 )
-
-// --- Mock Repo ---
 
 type mockProducerRepo struct {
 	pushTaskCalls    []*repository.PushTaskParams
@@ -55,8 +55,6 @@ func (m *mockProducerRepo) PushTasksWithTx(_ context.Context, _ asynqpg.Tx, para
 	return m.pushManyTxResult, m.pushManyTxErr
 }
 
-// --- Mock Tx (satisfies asynqpg.Tx) ---
-
 type mockTx struct{}
 
 func (m *mockTx) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, error) {
@@ -90,8 +88,6 @@ func newTestProducer(repo *mockProducerRepo) *Producer {
 	return p
 }
 
-// --- Enqueue Tests ---
-
 func TestEnqueue_Success(t *testing.T) {
 	t.Parallel()
 
@@ -102,25 +98,13 @@ func TestEnqueue_Success(t *testing.T) {
 		Type:    "email.send",
 		Payload: []byte(`{"to":"user@example.com"}`),
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.ID == 0 {
-		t.Fatal("expected non-zero task ID")
-	}
-	if result.Duplicate {
-		t.Fatal("expected Duplicate to be false for new task")
-	}
+	require.NoError(t, err)
+	require.NotZero(t, result.ID)
+	require.False(t, result.Duplicate)
 
-	if len(repo.pushTaskCalls) != 1 {
-		t.Fatalf("expected 1 PushTask call, got %d", len(repo.pushTaskCalls))
-	}
-	if repo.pushTaskCalls[0].Type != "email.send" {
-		t.Fatalf("expected type %q, got %q", "email.send", repo.pushTaskCalls[0].Type)
-	}
-	if repo.pushTaskCalls[0].AttemptsLeft != 3 {
-		t.Fatalf("expected default MaxRetry 3, got %d", repo.pushTaskCalls[0].AttemptsLeft)
-	}
+	require.Len(t, repo.pushTaskCalls, 1)
+	require.Equal(t, "email.send", repo.pushTaskCalls[0].Type)
+	require.Equal(t, 3, repo.pushTaskCalls[0].AttemptsLeft)
 }
 
 func TestEnqueue_NilTask(t *testing.T) {
@@ -128,9 +112,7 @@ func TestEnqueue_NilTask(t *testing.T) {
 
 	p := newTestProducer(&mockProducerRepo{})
 	_, err := p.Enqueue(context.Background(), nil)
-	if err == nil {
-		t.Fatal("expected error for nil task")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueue_EmptyType(t *testing.T) {
@@ -141,9 +123,7 @@ func TestEnqueue_EmptyType(t *testing.T) {
 		Type:    "",
 		Payload: []byte(`{}`),
 	})
-	if err == nil {
-		t.Fatal("expected error for empty type")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueue_NilPayload(t *testing.T) {
@@ -154,9 +134,7 @@ func TestEnqueue_NilPayload(t *testing.T) {
 		Type:    "test",
 		Payload: nil,
 	})
-	if err == nil {
-		t.Fatal("expected error for nil payload")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueue_WithDelay(t *testing.T) {
@@ -170,13 +148,8 @@ func TestEnqueue_WithDelay(t *testing.T) {
 		Payload: []byte(`{}`),
 		Delay:   5 * time.Second,
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if repo.pushTaskCalls[0].Delay.Duration() != 5*time.Second {
-		t.Fatalf("expected 5s delay, got %v", repo.pushTaskCalls[0].Delay.Duration())
-	}
+	require.NoError(t, err)
+	require.Equal(t, 5*time.Second, repo.pushTaskCalls[0].Delay.Duration())
 }
 
 func TestEnqueue_WithProcessAt(t *testing.T) {
@@ -191,15 +164,11 @@ func TestEnqueue_WithProcessAt(t *testing.T) {
 		Payload:   []byte(`{}`),
 		ProcessAt: processAt,
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 
 	delay := repo.pushTaskCalls[0].Delay.Duration()
 	// Should be approximately 10 seconds
-	if delay < 9*time.Second || delay > 11*time.Second {
-		t.Fatalf("expected delay ~10s, got %v", delay)
-	}
+	require.InDelta(t, 10*time.Second, delay, float64(time.Second))
 }
 
 func TestEnqueue_ProcessAtInPast(t *testing.T) {
@@ -213,14 +182,8 @@ func TestEnqueue_ProcessAtInPast(t *testing.T) {
 		Payload:   []byte(`{}`),
 		ProcessAt: time.Now().Add(-time.Hour),
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	delay := repo.pushTaskCalls[0].Delay.Duration()
-	if delay != 0 {
-		t.Fatalf("expected delay clamped to 0, got %v", delay)
-	}
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(0), repo.pushTaskCalls[0].Delay.Duration())
 }
 
 func TestEnqueue_CustomMaxRetry(t *testing.T) {
@@ -234,13 +197,8 @@ func TestEnqueue_CustomMaxRetry(t *testing.T) {
 		Payload:  []byte(`{}`),
 		MaxRetry: ptr.Get(10),
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if repo.pushTaskCalls[0].AttemptsLeft != 10 {
-		t.Fatalf("expected MaxRetry 10, got %d", repo.pushTaskCalls[0].AttemptsLeft)
-	}
+	require.NoError(t, err)
+	require.Equal(t, 10, repo.pushTaskCalls[0].AttemptsLeft)
 }
 
 func TestEnqueue_DefaultMaxRetry(t *testing.T) {
@@ -253,13 +211,8 @@ func TestEnqueue_DefaultMaxRetry(t *testing.T) {
 		Type:    "test",
 		Payload: []byte(`{}`),
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if repo.pushTaskCalls[0].AttemptsLeft != 3 {
-		t.Fatalf("expected default MaxRetry 3, got %d", repo.pushTaskCalls[0].AttemptsLeft)
-	}
+	require.NoError(t, err)
+	require.Equal(t, 3, repo.pushTaskCalls[0].AttemptsLeft)
 }
 
 func TestEnqueue_RepoError(t *testing.T) {
@@ -272,9 +225,7 @@ func TestEnqueue_RepoError(t *testing.T) {
 		Type:    "test",
 		Payload: []byte(`{}`),
 	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueue_IdempotencyToken(t *testing.T) {
@@ -289,16 +240,9 @@ func TestEnqueue_IdempotencyToken(t *testing.T) {
 		Payload:          []byte(`{}`),
 		IdempotencyToken: &token,
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if repo.pushTaskCalls[0].IdempotencyToken == nil {
-		t.Fatal("expected idempotency token to be set")
-	}
-	if *repo.pushTaskCalls[0].IdempotencyToken != "unique-token" {
-		t.Fatalf("expected token %q, got %q", "unique-token", *repo.pushTaskCalls[0].IdempotencyToken)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, repo.pushTaskCalls[0].IdempotencyToken)
+	require.Equal(t, "unique-token", *repo.pushTaskCalls[0].IdempotencyToken)
 }
 
 func TestEnqueue_Duplicate(t *testing.T) {
@@ -313,18 +257,10 @@ func TestEnqueue_Duplicate(t *testing.T) {
 		Type:    "test",
 		Payload: []byte(`{}`),
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.ID != 42 {
-		t.Fatalf("expected ID 42, got %d", result.ID)
-	}
-	if !result.Duplicate {
-		t.Fatal("expected Duplicate to be true")
-	}
+	require.NoError(t, err)
+	require.Equal(t, int64(42), result.ID)
+	require.True(t, result.Duplicate)
 }
-
-// --- EnqueueTx Tests ---
 
 func TestEnqueueTx_Success(t *testing.T) {
 	t.Parallel()
@@ -336,13 +272,8 @@ func TestEnqueueTx_Success(t *testing.T) {
 		Type:    "test",
 		Payload: []byte(`{}`),
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(repo.pushTxCalls) != 1 {
-		t.Fatalf("expected 1 PushTaskWithTx call, got %d", len(repo.pushTxCalls))
-	}
+	require.NoError(t, err)
+	require.Len(t, repo.pushTxCalls, 1)
 }
 
 func TestEnqueueTx_NilTx(t *testing.T) {
@@ -353,9 +284,7 @@ func TestEnqueueTx_NilTx(t *testing.T) {
 		Type:    "test",
 		Payload: []byte(`{}`),
 	})
-	if err == nil {
-		t.Fatal("expected error for nil tx")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueueTx_NilTask(t *testing.T) {
@@ -363,9 +292,7 @@ func TestEnqueueTx_NilTask(t *testing.T) {
 
 	p := newTestProducer(&mockProducerRepo{})
 	_, err := p.EnqueueTx(context.Background(), &mockTx{}, nil)
-	if err == nil {
-		t.Fatal("expected error for nil task")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueueTx_EmptyType(t *testing.T) {
@@ -376,9 +303,7 @@ func TestEnqueueTx_EmptyType(t *testing.T) {
 		Type:    "",
 		Payload: []byte(`{}`),
 	})
-	if err == nil {
-		t.Fatal("expected error for empty type")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueueTx_RepoError(t *testing.T) {
@@ -391,12 +316,8 @@ func TestEnqueueTx_RepoError(t *testing.T) {
 		Type:    "test",
 		Payload: []byte(`{}`),
 	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	require.Error(t, err)
 }
-
-// --- EnqueueMany Tests ---
 
 func TestEnqueueMany_Success(t *testing.T) {
 	t.Parallel()
@@ -415,19 +336,10 @@ func TestEnqueueMany_Success(t *testing.T) {
 	}
 
 	result, err := p.EnqueueMany(context.Background(), tasks)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Results) != 3 {
-		t.Fatalf("expected 3 results, got %d", len(result.Results))
-	}
-
-	if len(repo.pushManyCalls) != 1 {
-		t.Fatalf("expected 1 PushTasks call, got %d", len(repo.pushManyCalls))
-	}
-	if len(repo.pushManyCalls[0].Tasks) != 3 {
-		t.Fatalf("expected 3 tasks in batch, got %d", len(repo.pushManyCalls[0].Tasks))
-	}
+	require.NoError(t, err)
+	require.Len(t, result.Results, 3)
+	require.Len(t, repo.pushManyCalls, 1)
+	require.Len(t, repo.pushManyCalls[0].Tasks, 3)
 }
 
 func TestEnqueueMany_Empty(t *testing.T) {
@@ -436,12 +348,8 @@ func TestEnqueueMany_Empty(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
 
 	result, err := p.EnqueueMany(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Results) != 0 {
-		t.Fatalf("expected empty results, got %d", len(result.Results))
-	}
+	require.NoError(t, err)
+	require.Empty(t, result.Results)
 }
 
 func TestEnqueueMany_NilTask(t *testing.T) {
@@ -453,9 +361,7 @@ func TestEnqueueMany_NilTask(t *testing.T) {
 		{Type: "ok", Payload: []byte(`{}`)},
 		nil,
 	})
-	if err == nil {
-		t.Fatal("expected error for nil task in batch")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueueMany_EmptyType(t *testing.T) {
@@ -466,9 +372,7 @@ func TestEnqueueMany_EmptyType(t *testing.T) {
 	_, err := p.EnqueueMany(context.Background(), []*asynqpg.Task{
 		{Type: "", Payload: []byte(`{}`)},
 	})
-	if err == nil {
-		t.Fatal("expected error for empty type in batch")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueueMany_NilPayload(t *testing.T) {
@@ -479,9 +383,7 @@ func TestEnqueueMany_NilPayload(t *testing.T) {
 	_, err := p.EnqueueMany(context.Background(), []*asynqpg.Task{
 		{Type: "test", Payload: nil},
 	})
-	if err == nil {
-		t.Fatal("expected error for nil payload in batch")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueueMany_RepoError(t *testing.T) {
@@ -493,12 +395,8 @@ func TestEnqueueMany_RepoError(t *testing.T) {
 	_, err := p.EnqueueMany(context.Background(), []*asynqpg.Task{
 		{Type: "test", Payload: []byte(`{}`)},
 	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	require.Error(t, err)
 }
-
-// --- EnqueueManyTx Tests ---
 
 func TestEnqueueManyTx_Success(t *testing.T) {
 	t.Parallel()
@@ -514,16 +412,9 @@ func TestEnqueueManyTx_Success(t *testing.T) {
 		{Type: "test", Payload: []byte(`{"id":1}`)},
 		{Type: "test", Payload: []byte(`{"id":2}`)},
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(result.Results))
-	}
-
-	if len(repo.pushManyTxCalls) != 1 {
-		t.Fatalf("expected 1 call, got %d", len(repo.pushManyTxCalls))
-	}
+	require.NoError(t, err)
+	require.Len(t, result.Results, 2)
+	require.Len(t, repo.pushManyTxCalls, 1)
 }
 
 func TestEnqueueManyTx_NilTx(t *testing.T) {
@@ -534,9 +425,7 @@ func TestEnqueueManyTx_NilTx(t *testing.T) {
 	_, err := p.EnqueueManyTx(context.Background(), nil, []*asynqpg.Task{
 		{Type: "test", Payload: []byte(`{}`)},
 	})
-	if err == nil {
-		t.Fatal("expected error for nil tx")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueueManyTx_Empty(t *testing.T) {
@@ -545,12 +434,8 @@ func TestEnqueueManyTx_Empty(t *testing.T) {
 	p := newTestProducer(&mockProducerRepo{})
 
 	result, err := p.EnqueueManyTx(context.Background(), &mockTx{}, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Results) != 0 {
-		t.Fatalf("expected empty results, got %d", len(result.Results))
-	}
+	require.NoError(t, err)
+	require.Empty(t, result.Results)
 }
 
 func TestEnqueueManyTx_Validation(t *testing.T) {
@@ -561,9 +446,7 @@ func TestEnqueueManyTx_Validation(t *testing.T) {
 	_, err := p.EnqueueManyTx(context.Background(), &mockTx{}, []*asynqpg.Task{
 		nil,
 	})
-	if err == nil {
-		t.Fatal("expected error for nil task")
-	}
+	require.Error(t, err)
 }
 
 func TestEnqueueManyTx_RepoError(t *testing.T) {
@@ -575,20 +458,14 @@ func TestEnqueueManyTx_RepoError(t *testing.T) {
 	_, err := p.EnqueueManyTx(context.Background(), &mockTx{}, []*asynqpg.Task{
 		{Type: "test", Payload: []byte(`{}`)},
 	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	require.Error(t, err)
 }
-
-// --- New Tests ---
 
 func TestNew_NilPool(t *testing.T) {
 	t.Parallel()
 
 	_, err := New(Config{Pool: nil})
-	if err == nil {
-		t.Fatal("expected error for nil pool")
-	}
+	require.Error(t, err)
 }
 
 func TestSetDefaults(t *testing.T) {
@@ -597,12 +474,8 @@ func TestSetDefaults(t *testing.T) {
 	p := &Producer{}
 	p.setDefaults()
 
-	if p.defaultMaxRetry != 3 {
-		t.Fatalf("expected default MaxRetry 3, got %d", p.defaultMaxRetry)
-	}
-	if p.logger == nil {
-		t.Fatal("expected logger to be set")
-	}
+	require.Equal(t, 3, p.defaultMaxRetry)
+	require.NotNil(t, p.logger)
 }
 
 func TestCalculateDelay_NoDelay(t *testing.T) {
@@ -612,9 +485,7 @@ func TestCalculateDelay_NoDelay(t *testing.T) {
 	task := &asynqpg.Task{Type: "test", Payload: []byte(`{}`)}
 
 	delay := p.calculateDelay(task)
-	if delay != 0 {
-		t.Fatalf("expected 0 delay, got %v", delay)
-	}
+	require.Equal(t, time.Duration(0), delay)
 }
 
 func TestCalculateDelay_WithDelay(t *testing.T) {
@@ -624,9 +495,7 @@ func TestCalculateDelay_WithDelay(t *testing.T) {
 	task := &asynqpg.Task{Type: "test", Payload: []byte(`{}`), Delay: 5 * time.Second}
 
 	delay := p.calculateDelay(task)
-	if delay != 5*time.Second {
-		t.Fatalf("expected 5s, got %v", delay)
-	}
+	require.Equal(t, 5*time.Second, delay)
 }
 
 func TestCalculateDelay_ProcessAtOverridesDelay(t *testing.T) {
@@ -641,9 +510,7 @@ func TestCalculateDelay_ProcessAtOverridesDelay(t *testing.T) {
 	}
 
 	delay := p.calculateDelay(task)
-	if delay < 9*time.Second || delay > 11*time.Second {
-		t.Fatalf("expected ~10s, got %v", delay)
-	}
+	require.InDelta(t, 10*time.Second, delay, float64(time.Second))
 }
 
 func TestCalculateMaxRetry_Custom(t *testing.T) {
@@ -653,9 +520,7 @@ func TestCalculateMaxRetry_Custom(t *testing.T) {
 	task := &asynqpg.Task{MaxRetry: ptr.Get(7)}
 
 	result := p.calculateMaxRetry(task)
-	if result != 7 {
-		t.Fatalf("expected 7, got %d", result)
-	}
+	require.Equal(t, 7, result)
 }
 
 func TestCalculateMaxRetry_Default(t *testing.T) {
@@ -665,9 +530,7 @@ func TestCalculateMaxRetry_Default(t *testing.T) {
 	task := &asynqpg.Task{}
 
 	result := p.calculateMaxRetry(task)
-	if result != 3 {
-		t.Fatalf("expected default 3, got %d", result)
-	}
+	require.Equal(t, 3, result)
 }
 
 func TestCalculateMaxRetry_ExplicitZero(t *testing.T) {
@@ -677,7 +540,5 @@ func TestCalculateMaxRetry_ExplicitZero(t *testing.T) {
 	task := &asynqpg.Task{MaxRetry: ptr.Get(0)}
 
 	result := p.calculateMaxRetry(task)
-	if result != 0 {
-		t.Fatalf("expected 0 (no retries), got %d", result)
-	}
+	require.Equal(t, 0, result)
 }
