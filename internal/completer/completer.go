@@ -10,16 +10,6 @@ import (
 	"github.com/yakser/asynqpg/internal/repository"
 )
 
-// Completer defines the interface for task completion operations.
-type Completer interface {
-	Start(ctx context.Context) error
-	Stop()
-	Complete(taskID int64) error
-	Fail(taskID int64, message string) error
-	Retry(taskID int64, blockedTill time.Time, message string) error
-	Snooze(taskID int64, blockedTill time.Time) error
-}
-
 // FailRequest represents a pending fail operation.
 type FailRequest struct {
 	Message string
@@ -45,17 +35,6 @@ type Config struct {
 	Logger         *slog.Logger
 }
 
-// DefaultConfig returns default configuration for BatchCompleter.
-func DefaultConfig() Config {
-	return Config{
-		FlushInterval:  50 * time.Millisecond,
-		FlushThreshold: 100,
-		MaxBatchSize:   5000,
-		MaxBacklog:     20000,
-		Logger:         slog.Default(),
-	}
-}
-
 type completerRepo interface {
 	CompleteTasksMany(ctx context.Context, params repository.CompleteTasksManyParams) (int, error)
 	FailTasksMany(ctx context.Context, params repository.FailTasksManyParams) (int, error)
@@ -75,6 +54,7 @@ type BatchCompleter struct {
 	pendingRetry    map[int64]*RetryRequest
 	pendingSnooze   map[int64]*SnoozeRequest
 
+	// fixme: implement completer without sync.Cond and make it simple
 	backlogCond *sync.Cond
 	backlogSize int
 
@@ -84,22 +64,35 @@ type BatchCompleter struct {
 	isRunning bool
 }
 
+// DefaultConfig returns default configuration for BatchCompleter.
+func DefaultConfig() Config {
+	return Config{
+		FlushInterval:  50 * time.Millisecond,
+		FlushThreshold: 100,
+		MaxBatchSize:   5000,
+		MaxBacklog:     20000,
+		Logger:         slog.Default(),
+	}
+}
+
 // NewBatchCompleter creates a new BatchCompleter.
 func NewBatchCompleter(repo completerRepo, cfg Config) *BatchCompleter {
+	defaultCfg := DefaultConfig()
+
 	if cfg.FlushInterval == 0 {
-		cfg.FlushInterval = DefaultConfig().FlushInterval
+		cfg.FlushInterval = defaultCfg.FlushInterval
 	}
 	if cfg.FlushThreshold == 0 {
-		cfg.FlushThreshold = DefaultConfig().FlushThreshold
+		cfg.FlushThreshold = defaultCfg.FlushThreshold
 	}
 	if cfg.MaxBatchSize == 0 {
-		cfg.MaxBatchSize = DefaultConfig().MaxBatchSize
+		cfg.MaxBatchSize = defaultCfg.MaxBatchSize
 	}
 	if cfg.MaxBacklog == 0 {
-		cfg.MaxBacklog = DefaultConfig().MaxBacklog
+		cfg.MaxBacklog = defaultCfg.MaxBacklog
 	}
 	if cfg.Logger == nil {
-		cfg.Logger = slog.Default()
+		cfg.Logger = defaultCfg.Logger
 	}
 
 	bc := &BatchCompleter{
