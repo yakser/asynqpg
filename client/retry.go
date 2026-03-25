@@ -51,10 +51,10 @@ func (c *Client) RetryTask(ctx context.Context, id int64) (*TaskInfo, error) {
 	return info, nil
 }
 
-// RetryTaskTx moves a task back to pending using the provided executor (transaction).
-func (c *Client) RetryTaskTx(ctx context.Context, tx asynqpg.Querier, id int64) (*TaskInfo, error) {
+// RetryTaskTx moves a task back to pending using the provided transaction.
+func (c *Client) RetryTaskTx(ctx context.Context, tx asynqpg.Tx, id int64) (*TaskInfo, error) {
 	if tx == nil {
-		return nil, fmt.Errorf("executor cannot be nil")
+		return nil, fmt.Errorf("tx cannot be nil")
 	}
 
 	ctx, span := c.tracer.Start(ctx, "asynqpg.retry_task",
@@ -63,7 +63,7 @@ func (c *Client) RetryTaskTx(ctx context.Context, tx asynqpg.Querier, id int64) 
 	)
 	defer span.End()
 
-	task, updated, err := c.repo.RetryTaskByIDWithExecutor(ctx, tx, id)
+	task, updated, err := c.repo.RetryTaskByIDWithTx(ctx, tx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrTaskNotFound

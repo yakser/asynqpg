@@ -68,10 +68,10 @@ func ExampleProducer_EnqueueMany() {
 		asynqpg.NewTask("email:send", []byte(`{"to":"b@example.com"}`)),
 	}
 
-	ids, err := p.EnqueueMany(context.Background(), tasks)
+	result, err := p.EnqueueMany(context.Background(), tasks)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	_ = ids
+	_ = result
 }

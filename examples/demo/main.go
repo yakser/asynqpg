@@ -239,12 +239,12 @@ func seedTasks(ctx context.Context, p *producer.Producer, logger *slog.Logger) i
 			asynqpg.WithIdempotencyToken("seed:email.send:"+uuid.New().String()),
 		)
 	}
-	ids, err := p.EnqueueMany(ctx, emailTasks)
+	emailResult, err := p.EnqueueMany(ctx, emailTasks)
 	if err != nil {
 		logger.Error("failed to enqueue email tasks", "error", err)
 	} else {
-		total += len(ids)
-		logger.Info("seeded email tasks", "count", len(ids))
+		total += emailResult.InsertedCount()
+		logger.Info("seeded email tasks", "count", emailResult.InsertedCount())
 	}
 
 	// Batch: 30 notification tasks (some with delay).
@@ -261,12 +261,12 @@ func seedTasks(ctx context.Context, p *producer.Producer, logger *slog.Logger) i
 			opts...,
 		)
 	}
-	ids, err = p.EnqueueMany(ctx, notifTasks)
+	notifResult, err := p.EnqueueMany(ctx, notifTasks)
 	if err != nil {
 		logger.Error("failed to enqueue notification tasks", "error", err)
 	} else {
-		total += len(ids)
-		logger.Info("seeded notification tasks", "count", len(ids))
+		total += notifResult.InsertedCount()
+		logger.Info("seeded notification tasks", "count", notifResult.InsertedCount())
 	}
 
 	// Individual: 20 report tasks.

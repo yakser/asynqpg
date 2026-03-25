@@ -10,6 +10,8 @@ import (
 )
 
 func TestNewTracer_WithProvider(t *testing.T) {
+	t.Parallel()
+
 	tp := sdktrace.NewTracerProvider()
 	defer tp.Shutdown(context.TODO())
 
@@ -18,6 +20,8 @@ func TestNewTracer_WithProvider(t *testing.T) {
 }
 
 func TestNewTracer_NilProvider_UsesGlobal(t *testing.T) {
+	t.Parallel()
+
 	tracer := NewTracer(nil)
 	assert.NotNil(t, tracer)
 }

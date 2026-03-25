@@ -65,6 +65,8 @@ func createAndFetchTasks(t *testing.T, repo *repository.Repository, count int, t
 }
 
 func TestBatchCompleter_Complete_Single(t *testing.T) {
+	t.Parallel()
+
 	repo, bc := setupTest(t)
 	ctx := context.Background()
 
@@ -84,6 +86,8 @@ func TestBatchCompleter_Complete_Single(t *testing.T) {
 }
 
 func TestBatchCompleter_Complete_Multiple(t *testing.T) {
+	t.Parallel()
+
 	repo, bc := setupTest(t)
 	ctx := context.Background()
 
@@ -103,6 +107,8 @@ func TestBatchCompleter_Complete_Multiple(t *testing.T) {
 }
 
 func TestBatchCompleter_Complete_FlushOnThreshold(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -132,6 +138,8 @@ func TestBatchCompleter_Complete_FlushOnThreshold(t *testing.T) {
 }
 
 func TestBatchCompleter_Complete_FlushOnInterval(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -160,6 +168,8 @@ func TestBatchCompleter_Complete_FlushOnInterval(t *testing.T) {
 }
 
 func TestBatchCompleter_Fail_Basic(t *testing.T) {
+	t.Parallel()
+
 	repo, bc := setupTest(t)
 	ctx := context.Background()
 
@@ -178,6 +188,8 @@ func TestBatchCompleter_Fail_Basic(t *testing.T) {
 }
 
 func TestBatchCompleter_Retry_Basic(t *testing.T) {
+	t.Parallel()
+
 	repo, bc := setupTest(t)
 	ctx := context.Background()
 
@@ -197,6 +209,8 @@ func TestBatchCompleter_Retry_Basic(t *testing.T) {
 }
 
 func TestBatchCompleter_MixedOperations(t *testing.T) {
+	t.Parallel()
+
 	repo, bc := setupTest(t)
 	ctx := context.Background()
 
@@ -228,6 +242,8 @@ func TestBatchCompleter_MixedOperations(t *testing.T) {
 }
 
 func TestBatchCompleter_GracefulShutdown(t *testing.T) {
+	t.Parallel()
+
 	repo, bc := setupTest(t)
 	ctx := context.Background()
 
@@ -248,6 +264,8 @@ func TestBatchCompleter_GracefulShutdown(t *testing.T) {
 }
 
 func TestBatchCompleter_GracefulShutdown_Empty(t *testing.T) {
+	t.Parallel()
+
 	_, bc := setupTest(t)
 	ctx := context.Background()
 
@@ -263,6 +281,8 @@ func TestBatchCompleter_GracefulShutdown_Empty(t *testing.T) {
 }
 
 func TestBatchCompleter_Backpressure_Block(t *testing.T) {
+	t.Parallel()
+
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
@@ -302,6 +322,8 @@ func TestBatchCompleter_Backpressure_Block(t *testing.T) {
 }
 
 func TestBatchCompleter_DoubleStart(t *testing.T) {
+	t.Parallel()
+
 	_, bc := setupTest(t)
 	ctx := context.Background()
 
@@ -315,6 +337,8 @@ func TestBatchCompleter_DoubleStart(t *testing.T) {
 }
 
 func TestBatchCompleter_StopWithoutStart(t *testing.T) {
+	t.Parallel()
+
 	_, bc := setupTest(t)
 
 	// Should not panic
@@ -322,6 +346,8 @@ func TestBatchCompleter_StopWithoutStart(t *testing.T) {
 }
 
 func TestBatchCompleter_SameTaskMultipleOperations(t *testing.T) {
+	t.Parallel()
+
 	repo, bc := setupTest(t)
 	ctx := context.Background()
 
@@ -343,6 +369,8 @@ func TestBatchCompleter_SameTaskMultipleOperations(t *testing.T) {
 }
 
 func TestBatchCompleter_ConcurrentOperations(t *testing.T) {
+	t.Parallel()
+
 	repo, bc := setupTest(t)
 	ctx := context.Background()
 

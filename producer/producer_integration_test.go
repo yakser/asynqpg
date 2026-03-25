@@ -19,7 +19,11 @@ import (
 )
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully creates producer with valid config", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		p, err := producer.New(producer.Config{Pool: db})
@@ -28,6 +32,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("returns error when Pool is nil", func(t *testing.T) {
+		t.Parallel()
+
 		p, err := producer.New(producer.Config{})
 		require.Error(t, err)
 		assert.Nil(t, p)
@@ -37,7 +43,11 @@ func TestNew(t *testing.T) {
 }
 
 func TestEnqueue(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully enqueues task", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -58,6 +68,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("returns error when task is nil", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -69,6 +81,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("returns error when task type is empty", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -80,6 +94,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("applies delay correctly", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -101,6 +117,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("applies max retry from config", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{
 			Pool:            db,
@@ -122,6 +140,8 @@ func TestEnqueue(t *testing.T) {
 	})
 
 	t.Run("task max retry overrides config", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{
 			Pool:            db,
@@ -145,7 +165,11 @@ func TestEnqueue(t *testing.T) {
 }
 
 func TestEnqueueTx(t *testing.T) {
+	t.Parallel()
+
 	t.Run("task created after commit", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -177,6 +201,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("task not created on rollback", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -203,6 +229,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("multiple tasks in single transaction", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -237,6 +265,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("multiple tasks rollback together", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -269,6 +299,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("atomicity with business data", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		_, err := db.Exec(`CREATE TABLE IF NOT EXISTS test_orders (id SERIAL PRIMARY KEY, name TEXT)`)
@@ -307,6 +339,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("atomicity commit with business data", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		_, err := db.Exec(`CREATE TABLE IF NOT EXISTS test_orders (id SERIAL PRIMARY KEY, name TEXT)`)
@@ -343,7 +377,9 @@ func TestEnqueueTx(t *testing.T) {
 		assert.Equal(t, "process-order", task.Type)
 	})
 
-	t.Run("returns error when executor is nil", func(t *testing.T) {
+	t.Run("returns error when tx is nil", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -351,10 +387,12 @@ func TestEnqueueTx(t *testing.T) {
 		_, err = p.EnqueueTx(context.Background(), nil, &asynqpg.Task{Type: "test"})
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "executor cannot be nil")
+		assert.Contains(t, err.Error(), "tx cannot be nil")
 	})
 
 	t.Run("returns error when task is nil", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -371,6 +409,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("returns error when task type is empty", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -387,6 +427,8 @@ func TestEnqueueTx(t *testing.T) {
 	})
 
 	t.Run("applies delay in transaction", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -415,7 +457,11 @@ func TestEnqueueTx(t *testing.T) {
 }
 
 func TestEnqueueMany(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully enqueues multiple tasks", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -426,22 +472,31 @@ func TestEnqueueMany(t *testing.T) {
 			{Type: "batch-task", Payload: []byte(`{"id":3}`)},
 		}
 
-		ids, err := p.EnqueueMany(t.Context(), tasks)
+		result, err := p.EnqueueMany(t.Context(), tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids, 3)
+		assert.Len(t, result.Results, 3)
+		assert.Equal(t, 3, result.InsertedCount())
+		for _, r := range result.Results {
+			assert.False(t, r.Duplicate)
+			assert.NotZero(t, r.ID)
+		}
 	})
 
-	t.Run("returns empty slice for empty input", func(t *testing.T) {
+	t.Run("returns empty results for empty input", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
 
-		ids, err := p.EnqueueMany(t.Context(), []*asynqpg.Task{})
+		result, err := p.EnqueueMany(t.Context(), []*asynqpg.Task{})
 		require.NoError(t, err)
-		assert.Len(t, ids, 0)
+		assert.Len(t, result.Results, 0)
 	})
 
-	t.Run("handles idempotency - skips duplicates", func(t *testing.T) {
+	t.Run("handles idempotency - flags duplicates", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -452,17 +507,22 @@ func TestEnqueueMany(t *testing.T) {
 		}
 
 		// First insert
-		ids1, err := p.EnqueueMany(t.Context(), tasks)
+		result1, err := p.EnqueueMany(t.Context(), tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids1, 1)
+		assert.Len(t, result1.Results, 1)
+		assert.False(t, result1.Results[0].Duplicate)
 
-		// Second insert with same token - should be skipped
-		ids2, err := p.EnqueueMany(t.Context(), tasks)
+		// Second insert with same token - should be flagged as duplicate
+		result2, err := p.EnqueueMany(t.Context(), tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids2, 0)
+		assert.Len(t, result2.Results, 1)
+		assert.True(t, result2.Results[0].Duplicate)
+		assert.Equal(t, result1.Results[0].ID, result2.Results[0].ID)
 	})
 
 	t.Run("validates all tasks - rejects nil task", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -479,6 +539,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("validates all tasks - rejects empty type", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -494,6 +556,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("validates all tasks - rejects nil payload", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -509,6 +573,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("applies delay and max retry", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db, DefaultMaxRetry: 5})
 		require.NoError(t, err)
@@ -528,6 +594,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("handles mixed tasks with different configs", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db, DefaultMaxRetry: 3})
 		require.NoError(t, err)
@@ -552,6 +620,8 @@ func TestEnqueueMany(t *testing.T) {
 	})
 
 	t.Run("large batch without chunking", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -565,9 +635,9 @@ func TestEnqueueMany(t *testing.T) {
 			}
 		}
 
-		ids, err := p.EnqueueMany(t.Context(), tasks)
+		result, err := p.EnqueueMany(t.Context(), tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids, batchSize)
+		assert.Len(t, result.Results, batchSize)
 
 		var count int
 		err = db.Get(&count, "SELECT COUNT(*) FROM asynqpg_tasks WHERE type = 'large-batch-task'")
@@ -577,7 +647,11 @@ func TestEnqueueMany(t *testing.T) {
 }
 
 func TestEnqueueManyTx(t *testing.T) {
+	t.Parallel()
+
 	t.Run("tasks created after commit", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -591,9 +665,9 @@ func TestEnqueueManyTx(t *testing.T) {
 			{Type: "batch-tx-task", Payload: []byte(`{"id":2}`)},
 		}
 
-		ids, err := p.EnqueueManyTx(ctx, tx, tasks)
+		result, err := p.EnqueueManyTx(ctx, tx, tasks)
 		require.NoError(t, err)
-		assert.Len(t, ids, 2)
+		assert.Len(t, result.Results, 2)
 
 		// Not visible before commit
 		var countBeforeCommit int
@@ -612,6 +686,8 @@ func TestEnqueueManyTx(t *testing.T) {
 	})
 
 	t.Run("tasks not created on rollback", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -637,7 +713,9 @@ func TestEnqueueManyTx(t *testing.T) {
 		assert.Equal(t, 0, count)
 	})
 
-	t.Run("returns error when executor is nil", func(t *testing.T) {
+	t.Run("returns error when tx is nil", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -646,10 +724,12 @@ func TestEnqueueManyTx(t *testing.T) {
 		_, err = p.EnqueueManyTx(context.Background(), nil, tasks)
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "executor cannot be nil")
+		assert.Contains(t, err.Error(), "tx cannot be nil")
 	})
 
-	t.Run("returns empty slice for empty input", func(t *testing.T) {
+	t.Run("returns empty results for empty input", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 		p, err := producer.New(producer.Config{Pool: db})
 		require.NoError(t, err)
@@ -659,12 +739,14 @@ func TestEnqueueManyTx(t *testing.T) {
 		require.NoError(t, err)
 		defer tx.Rollback()
 
-		ids, err := p.EnqueueManyTx(ctx, tx, []*asynqpg.Task{})
+		result, err := p.EnqueueManyTx(ctx, tx, []*asynqpg.Task{})
 		require.NoError(t, err)
-		assert.Len(t, ids, 0)
+		assert.Len(t, result.Results, 0)
 	})
 
 	t.Run("atomicity with business data", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		_, err := db.Exec(`CREATE TABLE IF NOT EXISTS batch_orders (id SERIAL PRIMARY KEY, name TEXT)`)

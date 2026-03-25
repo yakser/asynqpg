@@ -11,6 +11,8 @@ import (
 )
 
 func TestNewMetrics_CreatesAllInstruments(t *testing.T) {
+	t.Parallel()
+
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	defer mp.Shutdown(context.Background())
@@ -28,12 +30,16 @@ func TestNewMetrics_CreatesAllInstruments(t *testing.T) {
 }
 
 func TestNewMetrics_NilProvider_UsesGlobal(t *testing.T) {
+	t.Parallel()
+
 	m, err := NewMetrics(nil)
 	require.NoError(t, err)
 	require.NotNil(t, m)
 }
 
 func TestMetrics_RecordAndRead(t *testing.T) {
+	t.Parallel()
+
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	defer mp.Shutdown(context.Background())
@@ -72,6 +78,8 @@ func TestMetrics_RecordAndRead(t *testing.T) {
 }
 
 func TestMetrics_CounterValues(t *testing.T) {
+	t.Parallel()
+
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	defer mp.Shutdown(context.Background())

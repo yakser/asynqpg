@@ -290,7 +290,12 @@ func (bc *BatchCompleter) flush() {
 
 	bc.mu.Unlock()
 
-	bc.executeBatch(bc.ctx, completeIDs, failRequests, retryRequests, snoozeRequests)
+	// Use context.WithoutCancel to ensure batch operations succeed even if
+	// the completer context is cancelled during shutdown. Without this,
+	// a ticker-fired flush() can race with Stop()'s cancel(), causing
+	// executeBatch to fail with "context canceled" and silently lose items
+	// that were already swapped out of the pending maps.
+	bc.executeBatch(context.WithoutCancel(bc.ctx), completeIDs, failRequests, retryRequests, snoozeRequests)
 }
 
 func (bc *BatchCompleter) finalFlush() {

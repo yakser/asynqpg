@@ -116,6 +116,8 @@ func newTestCompleter(repo *mockCompleterRepo, cfg Config) *BatchCompleter {
 // --- Tests ---
 
 func TestUnit_DefaultConfig(t *testing.T) {
+	t.Parallel()
+
 	cfg := DefaultConfig()
 	if cfg.FlushInterval != 50*time.Millisecond {
 		t.Fatalf("expected 50ms, got %v", cfg.FlushInterval)
@@ -132,6 +134,8 @@ func TestUnit_DefaultConfig(t *testing.T) {
 }
 
 func TestUnit_Complete_FlushesOnInterval(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
@@ -165,6 +169,8 @@ func TestUnit_Complete_FlushesOnInterval(t *testing.T) {
 }
 
 func TestUnit_Fail_FlushesOnInterval(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
@@ -192,6 +198,8 @@ func TestUnit_Fail_FlushesOnInterval(t *testing.T) {
 }
 
 func TestUnit_Retry_FlushesOnInterval(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
@@ -220,6 +228,8 @@ func TestUnit_Retry_FlushesOnInterval(t *testing.T) {
 }
 
 func TestUnit_MixedOps_AllFlushed(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
@@ -246,6 +256,8 @@ func TestUnit_MixedOps_AllFlushed(t *testing.T) {
 }
 
 func TestUnit_FlushOnThreshold(t *testing.T) {
+	t.Parallel()
+
 	// triggerFlush broadcasts the cond var, but runLoop listens on ticker.
 	// Threshold + short interval ensures flush happens quickly.
 	repo := &mockCompleterRepo{}
@@ -281,6 +293,8 @@ func TestUnit_FlushOnThreshold(t *testing.T) {
 }
 
 func TestUnit_EmptyFlush_Skipped(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
@@ -304,6 +318,8 @@ func TestUnit_EmptyFlush_Skipped(t *testing.T) {
 }
 
 func TestUnit_GracefulShutdown_Flushes(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{
 		FlushInterval: 10 * time.Second, // long – won't trigger before stop
@@ -340,6 +356,8 @@ func TestUnit_GracefulShutdown_Flushes(t *testing.T) {
 }
 
 func TestUnit_DoubleStart_Error(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{})
 
@@ -355,6 +373,8 @@ func TestUnit_DoubleStart_Error(t *testing.T) {
 }
 
 func TestUnit_StopWithoutStart_Safe(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{})
 	// Should not panic
@@ -362,6 +382,8 @@ func TestUnit_StopWithoutStart_Safe(t *testing.T) {
 }
 
 func TestUnit_WithRetries_RepoError_Logged(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{
 		completeErr: errors.New("db connection lost"),
 	}
@@ -389,6 +411,8 @@ func TestUnit_WithRetries_RepoError_Logged(t *testing.T) {
 }
 
 func TestUnit_Backpressure(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{
 		FlushInterval:  10 * time.Second,
@@ -423,6 +447,8 @@ func TestUnit_Backpressure(t *testing.T) {
 }
 
 func TestUnit_SameTask_LastWins(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
@@ -452,6 +478,8 @@ func TestUnit_SameTask_LastWins(t *testing.T) {
 }
 
 func TestUnit_Snooze_FlushesOnInterval(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
@@ -492,6 +520,8 @@ func TestUnit_Snooze_FlushesOnInterval(t *testing.T) {
 }
 
 func TestUnit_Snooze_MixedWithComplete(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
@@ -532,6 +562,8 @@ func TestUnit_Snooze_MixedWithComplete(t *testing.T) {
 }
 
 func TestUnit_ConcurrentOperations(t *testing.T) {
+	t.Parallel()
+
 	repo := &mockCompleterRepo{}
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 

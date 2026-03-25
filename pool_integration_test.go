@@ -21,12 +21,16 @@ import (
 )
 
 func TestPoolInterfaceSatisfaction(t *testing.T) {
+	t.Parallel()
+
 	// Compile-time checks (also in pool_adapter.go, repeated here for clarity).
 	var _ asynqpg.Pool = (*sqlx.DB)(nil)
-	var _ asynqpg.Querier = (*sqlx.Tx)(nil)
+	var _ asynqpg.Tx = (*sqlx.Tx)(nil)
 }
 
 func TestWrapStdDB_ProducerAndClient(t *testing.T) {
+	t.Parallel()
+
 	_, connStr := testutils.SetupTestDatabaseWithConnStr(t)
 
 	// Open a raw *sql.DB using lib/pq driver.
@@ -65,6 +69,8 @@ func TestWrapStdDB_ProducerAndClient(t *testing.T) {
 }
 
 func TestWrapStdDB_PgxDriver(t *testing.T) {
+	t.Parallel()
+
 	_, connStr := testutils.SetupTestDatabaseWithConnStr(t)
 
 	// Open a raw *sql.DB using pgx/stdlib driver.
@@ -98,6 +104,8 @@ func TestWrapStdDB_PgxDriver(t *testing.T) {
 }
 
 func TestIndependentPools_ProducerAndClient(t *testing.T) {
+	t.Parallel()
+
 	// Each component gets its own connection pool to the same database.
 	// Verifies that producer and client can work with separate pools.
 	db1, connStr := testutils.SetupTestDatabaseWithConnStr(t)
@@ -137,6 +145,8 @@ func TestIndependentPools_ProducerAndClient(t *testing.T) {
 }
 
 func TestMixedDriverPools(t *testing.T) {
+	t.Parallel()
+
 	// Producer uses lib/pq (via sqlx), Client uses pgx/stdlib (via WrapStdDB).
 	// Verifies cross-driver compatibility.
 	db, connStr := testutils.SetupTestDatabaseWithConnStr(t)

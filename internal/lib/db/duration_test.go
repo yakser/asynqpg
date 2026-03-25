@@ -6,6 +6,8 @@ import (
 )
 
 func TestNewDuration(t *testing.T) {
+	t.Parallel()
+
 	d := NewDuration(5 * time.Second)
 	if d.Duration() != 5*time.Second {
 		t.Fatalf("expected 5s, got %v", d.Duration())
@@ -13,6 +15,8 @@ func TestNewDuration(t *testing.T) {
 }
 
 func TestDuration_IsZero_True(t *testing.T) {
+	t.Parallel()
+
 	d := NewDuration(0)
 	if !d.IsZero() {
 		t.Fatal("expected IsZero to return true for zero duration")
@@ -20,6 +24,8 @@ func TestDuration_IsZero_True(t *testing.T) {
 }
 
 func TestDuration_IsZero_False(t *testing.T) {
+	t.Parallel()
+
 	d := NewDuration(time.Second)
 	if d.IsZero() {
 		t.Fatal("expected IsZero to return false for non-zero duration")
@@ -27,6 +33,8 @@ func TestDuration_IsZero_False(t *testing.T) {
 }
 
 func TestDuration_Value(t *testing.T) {
+	t.Parallel()
+
 	d := NewDuration(1500 * time.Millisecond)
 	v, err := d.Value()
 	if err != nil {
@@ -43,6 +51,8 @@ func TestDuration_Value(t *testing.T) {
 }
 
 func TestDuration_Value_RoundsToMilliseconds(t *testing.T) {
+	t.Parallel()
+
 	// 1500100 nanoseconds should be rounded to 1.5ms
 	d := NewDuration(1500100 * time.Nanosecond)
 	v, err := d.Value()
@@ -57,6 +67,8 @@ func TestDuration_Value_RoundsToMilliseconds(t *testing.T) {
 }
 
 func TestDuration_Duration(t *testing.T) {
+	t.Parallel()
+
 	original := 3*time.Hour + 15*time.Minute
 	d := NewDuration(original)
 	if d.Duration() != original {
@@ -65,6 +77,8 @@ func TestDuration_Duration(t *testing.T) {
 }
 
 func TestDuration_String(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		duration time.Duration
@@ -80,6 +94,8 @@ func TestDuration_String(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			d := NewDuration(tt.duration)
 			if d.String() != tt.expected {
 				t.Fatalf("expected %q, got %q", tt.expected, d.String())

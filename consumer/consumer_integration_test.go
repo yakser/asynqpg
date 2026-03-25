@@ -40,7 +40,10 @@ func (m *mockTaskHandler) CallCount() int {
 }
 
 func TestNew(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully creates consumer with valid config", func(t *testing.T) {
+		t.Parallel()
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{
@@ -53,6 +56,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("applies custom configuration", func(t *testing.T) {
+		t.Parallel()
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{
@@ -71,6 +75,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("returns error when Pool is nil", func(t *testing.T) {
+		t.Parallel()
+
 		c, err := consumer.New(consumer.Config{
 			Logger: slog.New(slog.NewTextHandler(os.Stderr, nil)),
 		})
@@ -82,7 +88,10 @@ func TestNew(t *testing.T) {
 }
 
 func TestRegisterTaskHandler(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully registers task handler", func(t *testing.T) {
+		t.Parallel()
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{Pool: db})
@@ -95,6 +104,8 @@ func TestRegisterTaskHandler(t *testing.T) {
 	})
 
 	t.Run("applies custom options", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{Pool: db})
@@ -112,6 +123,8 @@ func TestRegisterTaskHandler(t *testing.T) {
 	})
 
 	t.Run("returns error when handler already registered", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{Pool: db})
@@ -127,6 +140,8 @@ func TestRegisterTaskHandler(t *testing.T) {
 	})
 
 	t.Run("returns error when registering after start", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{
@@ -151,7 +166,11 @@ func TestRegisterTaskHandler(t *testing.T) {
 }
 
 func TestStartStop(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully starts and stops consumer", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{
@@ -173,6 +192,8 @@ func TestStartStop(t *testing.T) {
 	})
 
 	t.Run("returns error when starting without handlers", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{Pool: db})
@@ -184,6 +205,8 @@ func TestStartStop(t *testing.T) {
 	})
 
 	t.Run("returns error when starting already started consumer", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{
@@ -207,6 +230,8 @@ func TestStartStop(t *testing.T) {
 	})
 
 	t.Run("stop is idempotent", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{
@@ -232,7 +257,11 @@ func TestStartStop(t *testing.T) {
 }
 
 func TestGracefulShutdown(t *testing.T) {
+	t.Parallel()
+
 	t.Run("shuts down within timeout", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		c, err := consumer.New(consumer.Config{
@@ -282,6 +311,8 @@ func TestGracefulShutdown(t *testing.T) {
 	})
 
 	t.Run("returns error when shutdown times out", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		producer, err := producer.New(producer.Config{
@@ -341,7 +372,11 @@ func TestGracefulShutdown(t *testing.T) {
 }
 
 func TestTaskProcessing(t *testing.T) {
+	t.Parallel()
+
 	t.Run("processes tasks successfully", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "success_task_" + t.Name()
@@ -395,6 +430,8 @@ func TestTaskProcessing(t *testing.T) {
 	})
 
 	t.Run("handles task processing errors", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "error_task_" + t.Name()
@@ -445,7 +482,11 @@ func TestTaskProcessing(t *testing.T) {
 }
 
 func TestConcurrency(t *testing.T) {
+	t.Parallel()
+
 	t.Run("processes tasks concurrently", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "concurrent_task_" + t.Name()
@@ -515,6 +556,8 @@ func TestConcurrency(t *testing.T) {
 	})
 
 	t.Run("handles multiple task types concurrently", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		emailType := "email_multi_" + t.Name()
@@ -591,7 +634,11 @@ func TestConcurrency(t *testing.T) {
 }
 
 func TestTaskLockDuringExecution(t *testing.T) {
+	t.Parallel()
+
 	t.Run("prevents other consumers from picking up locked task", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "lock_test_" + t.Name()
@@ -711,6 +758,8 @@ func TestTaskLockDuringExecution(t *testing.T) {
 	})
 
 	t.Run("task becomes available after lock expires", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "lock_expiry_test_" + t.Name()
@@ -829,6 +878,8 @@ func TestTaskLockDuringExecution(t *testing.T) {
 	})
 
 	t.Run("task context cancelled after timeout", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "timeout_test_" + t.Name()
@@ -903,6 +954,8 @@ func TestTaskLockDuringExecution(t *testing.T) {
 	})
 
 	t.Run("proper lock duration based on task timeout", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "lock_duration_test_" + t.Name()
@@ -989,7 +1042,11 @@ func TestTaskLockDuringExecution(t *testing.T) {
 }
 
 func TestContextUtilities(t *testing.T) {
+	t.Parallel()
+
 	t.Run("provides task metadata via context", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "ctx_utils_task_" + t.Name()
@@ -1057,7 +1114,11 @@ func TestContextUtilities(t *testing.T) {
 }
 
 func TestTaskSnooze(t *testing.T) {
+	t.Parallel()
+
 	t.Run("reschedules task without counting attempt", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "snooze_task_" + t.Name()
@@ -1107,8 +1168,6 @@ func TestTaskSnooze(t *testing.T) {
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
 		// Give consumer time to persist the result
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1122,6 +1181,8 @@ func TestTaskSnooze(t *testing.T) {
 	})
 
 	t.Run("wrapped snooze error detected", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "snooze_wrapped_" + t.Name()
@@ -1169,8 +1230,6 @@ func TestTaskSnooze(t *testing.T) {
 			return atomic.LoadInt32(&processed) >= 2
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1181,7 +1240,11 @@ func TestTaskSnooze(t *testing.T) {
 }
 
 func TestTaskSnoozeWithError(t *testing.T) {
+	t.Parallel()
+
 	t.Run("reschedules with error and counts attempt", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "snooze_err_task_" + t.Name()
@@ -1229,8 +1292,6 @@ func TestTaskSnoozeWithError(t *testing.T) {
 			return atomic.LoadInt32(&processed) >= 2
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1244,6 +1305,8 @@ func TestTaskSnoozeWithError(t *testing.T) {
 	})
 
 	t.Run("fails when no attempts left", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "snooze_err_exhaust_" + t.Name()
@@ -1288,8 +1351,6 @@ func TestTaskSnoozeWithError(t *testing.T) {
 			return atomic.LoadInt32(&processed) >= 1
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed")
 
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1303,6 +1364,8 @@ func TestTaskSnoozeWithError(t *testing.T) {
 }
 
 func TestProcessTask_PopulatesRuntimeFields(t *testing.T) {
+	t.Parallel()
+
 	t.Run("populates CreatedAt, Messages, AttemptedAt on first attempt", func(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 
@@ -1376,7 +1439,11 @@ func TestProcessTask_PopulatesRuntimeFields(t *testing.T) {
 }
 
 func TestProcessTask_MessagesPopulatedOnRetry(t *testing.T) {
+	t.Parallel()
+
 	t.Run("Messages contains error from previous attempt", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "retry_messages_" + t.Name()
@@ -1427,8 +1494,6 @@ func TestProcessTask_MessagesPopulatedOnRetry(t *testing.T) {
 			return atomic.LoadInt32(&processed) >= 2
 		}, 10*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1439,7 +1504,11 @@ func TestProcessTask_MessagesPopulatedOnRetry(t *testing.T) {
 }
 
 func TestSkipRetry(t *testing.T) {
+	t.Parallel()
+
 	t.Run("immediately fails task when handler returns SkipRetry", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "skip_retry_task_" + t.Name()
@@ -1485,8 +1554,6 @@ func TestSkipRetry(t *testing.T) {
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed once")
 
 		// Give consumer time to persist the result
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 
@@ -1498,6 +1565,8 @@ func TestSkipRetry(t *testing.T) {
 	})
 
 	t.Run("immediately fails task when handler returns wrapped SkipRetry", func(t *testing.T) {
+		t.Parallel()
+
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "skip_retry_wrapped_" + t.Name()
@@ -1543,8 +1612,6 @@ func TestSkipRetry(t *testing.T) {
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed once")
 
 		// Give consumer time to persist the result
-		time.Sleep(200 * time.Millisecond)
-
 		err = c.Stop()
 		require.NoError(t, err)
 

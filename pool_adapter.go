@@ -8,8 +8,8 @@ import (
 
 // Compile-time interface satisfaction checks.
 var (
-	_ Pool    = (*sqlx.DB)(nil)
-	_ Querier = (*sqlx.Tx)(nil)
+	_ Pool = (*sqlx.DB)(nil)
+	_ Tx   = (*sqlx.Tx)(nil)
 )
 
 // WrapStdDB wraps a standard *sql.DB into a Pool.

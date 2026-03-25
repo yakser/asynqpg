@@ -4,7 +4,6 @@ package repository_test
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 	"time"
 
@@ -38,10 +37,11 @@ func TestPushTask_Basic(t *testing.T) {
 
 	// Assert
 	require.NoError(t, err)
-	assert.Greater(t, got, int64(0))
+	assert.Greater(t, got.ID, int64(0))
+	assert.False(t, got.Duplicate)
 
 	var status string
-	err = database.Get(&status, "SELECT status FROM asynqpg_tasks WHERE id = $1", got)
+	err = database.Get(&status, "SELECT status FROM asynqpg_tasks WHERE id = $1", got.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "pending", status)
 }
@@ -64,15 +64,17 @@ func TestPushTask_WithIdempotencyToken(t *testing.T) {
 	}
 
 	// Act
-	id1, err := repo.PushTask(ctx, task)
+	result1, err := repo.PushTask(ctx, task)
 	require.NoError(t, err)
-	assert.Greater(t, id1, int64(0))
+	assert.Greater(t, result1.ID, int64(0))
+	assert.False(t, result1.Duplicate)
 
-	_, err = repo.PushTask(ctx, task)
+	result2, err := repo.PushTask(ctx, task)
 
-	// Assert
-	require.Error(t, err)
-	assert.ErrorIs(t, err, sql.ErrNoRows)
+	// Assert -- duplicate is not an error, returns existing ID with Duplicate flag
+	require.NoError(t, err)
+	assert.True(t, result2.Duplicate)
+	assert.Equal(t, result1.ID, result2.ID)
 }
 
 func TestPushTask_WithDelay(t *testing.T) {
@@ -91,13 +93,13 @@ func TestPushTask_WithDelay(t *testing.T) {
 	}
 
 	// Act
-	id, err := repo.PushTask(ctx, task)
+	result, err := repo.PushTask(ctx, task)
 
 	// Assert
 	require.NoError(t, err)
 
 	var blockedTill time.Time
-	err = database.Get(&blockedTill, "SELECT blocked_till FROM asynqpg_tasks WHERE id = $1", id)
+	err = database.Get(&blockedTill, "SELECT blocked_till FROM asynqpg_tasks WHERE id = $1", result.ID)
 	require.NoError(t, err)
 	assert.True(t, blockedTill.After(time.Now()), "blocked_till should be in the future")
 }
@@ -237,7 +239,7 @@ func TestCompleteTasks_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	id, err := repo.PushTask(ctx, &repository.PushTaskParams{
+	result, err := repo.PushTask(ctx, &repository.PushTaskParams{
 		Type:         "complete-basic",
 		Payload:      []byte(`{}`),
 		AttemptsLeft: 3,
@@ -253,13 +255,13 @@ func TestCompleteTasks_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	err = repo.CompleteTasks(ctx, []int64{id})
+	err = repo.CompleteTasks(ctx, []int64{result.ID})
 
 	// Assert
 	require.NoError(t, err)
 
 	var status string
-	err = database.Get(&status, "SELECT status FROM asynqpg_tasks WHERE id = $1", id)
+	err = database.Get(&status, "SELECT status FROM asynqpg_tasks WHERE id = $1", result.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "completed", status)
 }
@@ -272,7 +274,7 @@ func TestFailTasks_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	id, err := repo.PushTask(ctx, &repository.PushTaskParams{
+	result, err := repo.PushTask(ctx, &repository.PushTaskParams{
 		Type:         "fail-basic",
 		Payload:      []byte(`{}`),
 		AttemptsLeft: 3,
@@ -288,18 +290,18 @@ func TestFailTasks_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	err = repo.FailTasks(ctx, []int64{id}, "something went wrong")
+	err = repo.FailTasks(ctx, []int64{result.ID}, "something went wrong")
 
 	// Assert
 	require.NoError(t, err)
 
 	var status string
-	err = database.Get(&status, "SELECT status FROM asynqpg_tasks WHERE id = $1", id)
+	err = database.Get(&status, "SELECT status FROM asynqpg_tasks WHERE id = $1", result.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "failed", status)
 
 	var messages []string
-	err = database.Select(&messages, "SELECT unnest(messages) FROM asynqpg_tasks WHERE id = $1", id)
+	err = database.Select(&messages, "SELECT unnest(messages) FROM asynqpg_tasks WHERE id = $1", result.ID)
 	require.NoError(t, err)
 	assert.Contains(t, messages, "something went wrong")
 }
@@ -312,7 +314,7 @@ func TestRetryTask_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	id, err := repo.PushTask(ctx, &repository.PushTaskParams{
+	result, err := repo.PushTask(ctx, &repository.PushTaskParams{
 		Type:         "retry-basic",
 		Payload:      []byte(`{}`),
 		AttemptsLeft: 3,
@@ -329,7 +331,7 @@ func TestRetryTask_Basic(t *testing.T) {
 
 	// Act
 	err = repo.RetryTask(ctx, repository.RetryTaskParams{
-		ID:          id,
+		ID:          result.ID,
 		BlockedTill: time.Now(),
 		Message:     "retrying due to transient error",
 	})
@@ -341,7 +343,7 @@ func TestRetryTask_Basic(t *testing.T) {
 	var attemptsLeft int
 	var attemptsElapsed int
 	err = database.QueryRow(
-		"SELECT status, attempts_left, attempts_elapsed FROM asynqpg_tasks WHERE id = $1", id,
+		"SELECT status, attempts_left, attempts_elapsed FROM asynqpg_tasks WHERE id = $1", result.ID,
 	).Scan(&status, &attemptsLeft, &attemptsElapsed)
 	require.NoError(t, err)
 	assert.Equal(t, "pending", status)
@@ -349,7 +351,7 @@ func TestRetryTask_Basic(t *testing.T) {
 	assert.Equal(t, 1, attemptsElapsed)
 
 	var messages []string
-	err = database.Select(&messages, "SELECT unnest(messages) FROM asynqpg_tasks WHERE id = $1", id)
+	err = database.Select(&messages, "SELECT unnest(messages) FROM asynqpg_tasks WHERE id = $1", result.ID)
 	require.NoError(t, err)
 	assert.Contains(t, messages, "retrying due to transient error")
 }
@@ -362,7 +364,7 @@ func TestSnoozeTask_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	id, err := repo.PushTask(ctx, &repository.PushTaskParams{
+	result, err := repo.PushTask(ctx, &repository.PushTaskParams{
 		Type:         "snooze-basic",
 		Payload:      []byte(`{}`),
 		AttemptsLeft: 3,
@@ -381,7 +383,7 @@ func TestSnoozeTask_Basic(t *testing.T) {
 
 	// Act
 	err = repo.SnoozeTask(ctx, repository.SnoozeTaskParams{
-		ID:          id,
+		ID:          result.ID,
 		BlockedTill: snoozeTill,
 	})
 
@@ -391,7 +393,7 @@ func TestSnoozeTask_Basic(t *testing.T) {
 	var status string
 	var attemptsLeft int
 	err = database.QueryRow(
-		"SELECT status, attempts_left FROM asynqpg_tasks WHERE id = $1", id,
+		"SELECT status, attempts_left FROM asynqpg_tasks WHERE id = $1", result.ID,
 	).Scan(&status, &attemptsLeft)
 	require.NoError(t, err)
 	assert.Equal(t, "pending", status)
@@ -406,7 +408,7 @@ func TestDeleteTasks_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	id, err := repo.PushTask(ctx, &repository.PushTaskParams{
+	result, err := repo.PushTask(ctx, &repository.PushTaskParams{
 		Type:         "delete-basic",
 		Payload:      []byte(`{}`),
 		AttemptsLeft: 3,
@@ -415,13 +417,13 @@ func TestDeleteTasks_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	err = repo.DeleteTasks(ctx, []int64{id})
+	err = repo.DeleteTasks(ctx, []int64{result.ID})
 
 	// Assert
 	require.NoError(t, err)
 
 	var count int
-	err = database.Get(&count, "SELECT count(*) FROM asynqpg_tasks WHERE id = $1", id)
+	err = database.Get(&count, "SELECT count(*) FROM asynqpg_tasks WHERE id = $1", result.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
 }
@@ -434,7 +436,7 @@ func TestDeleteTasks_SkipsRunning(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	id, err := repo.PushTask(ctx, &repository.PushTaskParams{
+	result, err := repo.PushTask(ctx, &repository.PushTaskParams{
 		Type:         "delete-running",
 		Payload:      []byte(`{}`),
 		AttemptsLeft: 3,
@@ -450,13 +452,13 @@ func TestDeleteTasks_SkipsRunning(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	err = repo.DeleteTasks(ctx, []int64{id})
+	err = repo.DeleteTasks(ctx, []int64{result.ID})
 
 	// Assert
 	require.NoError(t, err)
 
 	var count int
-	err = database.Get(&count, "SELECT count(*) FROM asynqpg_tasks WHERE id = $1", id)
+	err = database.Get(&count, "SELECT count(*) FROM asynqpg_tasks WHERE id = $1", result.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count, "running task should not be deleted")
 }
@@ -469,7 +471,7 @@ func TestGetStuckTasks_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	id, err := repo.PushTask(ctx, &repository.PushTaskParams{
+	pushResult, err := repo.PushTask(ctx, &repository.PushTaskParams{
 		Type:         "stuck-basic",
 		Payload:      []byte(`{}`),
 		AttemptsLeft: 3,
@@ -487,7 +489,7 @@ func TestGetStuckTasks_Basic(t *testing.T) {
 	// Manually backdate attempted_at to simulate a stuck task
 	_, err = database.Exec(
 		"UPDATE asynqpg_tasks SET attempted_at = $1 WHERE id = $2",
-		time.Now().Add(-1*time.Hour), id,
+		time.Now().Add(-1*time.Hour), pushResult.ID,
 	)
 	require.NoError(t, err)
 
@@ -500,7 +502,7 @@ func TestGetStuckTasks_Basic(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	require.Len(t, got, 1)
-	assert.Equal(t, id, got[0].ID)
+	assert.Equal(t, pushResult.ID, got[0].ID)
 	assert.Equal(t, "stuck-basic", got[0].Type)
 }
 
@@ -532,7 +534,7 @@ func TestDeleteOldTasks_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	id, err := repo.PushTask(ctx, &repository.PushTaskParams{
+	result, err := repo.PushTask(ctx, &repository.PushTaskParams{
 		Type:         "old-task",
 		Payload:      []byte(`{}`),
 		AttemptsLeft: 3,
@@ -547,13 +549,13 @@ func TestDeleteOldTasks_Basic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = repo.CompleteTasks(ctx, []int64{id})
+	err = repo.CompleteTasks(ctx, []int64{result.ID})
 	require.NoError(t, err)
 
 	// Manually backdate finalized_at
 	_, err = database.Exec(
 		"UPDATE asynqpg_tasks SET finalized_at = $1 WHERE id = $2",
-		time.Now().Add(-48*time.Hour), id,
+		time.Now().Add(-48*time.Hour), result.ID,
 	)
 	require.NoError(t, err)
 
@@ -570,7 +572,7 @@ func TestDeleteOldTasks_Basic(t *testing.T) {
 	assert.Equal(t, 1, got)
 
 	var count int
-	err = database.Get(&count, "SELECT count(*) FROM asynqpg_tasks WHERE id = $1", id)
+	err = database.Get(&count, "SELECT count(*) FROM asynqpg_tasks WHERE id = $1", result.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
 }

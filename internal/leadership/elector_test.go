@@ -98,6 +98,8 @@ func mockDBError(err error) *mockDB {
 // --- Config Tests ---
 
 func TestElectorConfig_SetDefaults_AllEmpty(t *testing.T) {
+	t.Parallel()
+
 	cfg := ElectorConfig{}
 	cfg.setDefaults()
 
@@ -119,6 +121,8 @@ func TestElectorConfig_SetDefaults_AllEmpty(t *testing.T) {
 }
 
 func TestElectorConfig_SetDefaults_CustomValues(t *testing.T) {
+	t.Parallel()
+
 	cfg := ElectorConfig{
 		ClientID:      "my-id",
 		Name:          "my-group",
@@ -142,6 +146,8 @@ func TestElectorConfig_SetDefaults_CustomValues(t *testing.T) {
 }
 
 func TestElectorConfig_SetDefaults_NegativeDurations(t *testing.T) {
+	t.Parallel()
+
 	cfg := ElectorConfig{
 		ElectInterval: -1 * time.Second,
 		TTL:           -1 * time.Second,
@@ -159,6 +165,8 @@ func TestElectorConfig_SetDefaults_NegativeDurations(t *testing.T) {
 // --- Lifecycle Tests ---
 
 func TestElector_IsLeader_InitiallyFalse(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBNotElected()
 	e := NewElector(db, ElectorConfig{})
 	if e.IsLeader() {
@@ -167,6 +175,8 @@ func TestElector_IsLeader_InitiallyFalse(t *testing.T) {
 }
 
 func TestElector_Start_Success(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -194,6 +204,8 @@ func TestElector_Start_Success(t *testing.T) {
 }
 
 func TestElector_Start_Idempotent(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{ElectInterval: time.Hour})
 
@@ -211,6 +223,8 @@ func TestElector_Start_Idempotent(t *testing.T) {
 }
 
 func TestElector_Stop_NotStarted(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBNotElected()
 	e := NewElector(db, ElectorConfig{})
 	// Should not panic
@@ -218,6 +232,8 @@ func TestElector_Stop_NotStarted(t *testing.T) {
 }
 
 func TestElector_Stop_Idempotent(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{ElectInterval: time.Hour})
 
@@ -232,6 +248,8 @@ func TestElector_Stop_Idempotent(t *testing.T) {
 }
 
 func TestElector_Stop_ResignsLeadership(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -273,6 +291,8 @@ func TestElector_Stop_ResignsLeadership(t *testing.T) {
 // --- Election Logic Tests ---
 
 func TestElector_ElectsLeader_RowsAffected1(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -292,6 +312,8 @@ func TestElector_ElectsLeader_RowsAffected1(t *testing.T) {
 }
 
 func TestElector_NotElected_RowsAffected0(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBNotElected()
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -311,6 +333,8 @@ func TestElector_NotElected_RowsAffected0(t *testing.T) {
 }
 
 func TestElector_LosesLeadership(t *testing.T) {
+	t.Parallel()
+
 	// First election: wins. Subsequent: loses.
 	db := newMockDB(
 		// First attempt (delete + insert)
@@ -345,6 +369,8 @@ func TestElector_LosesLeadership(t *testing.T) {
 }
 
 func TestElector_MaintainsLeadership(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected() // Always returns RowsAffected=1
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -369,6 +395,8 @@ func TestElector_MaintainsLeadership(t *testing.T) {
 }
 
 func TestElector_ErrorAssumedLostLeadership(t *testing.T) {
+	t.Parallel()
+
 	// First: win election. Then: DB error.
 	db := newMockDB(
 		// First attempt: success
@@ -401,6 +429,8 @@ func TestElector_ErrorAssumedLostLeadership(t *testing.T) {
 }
 
 func TestElector_RowsAffectedError(t *testing.T) {
+	t.Parallel()
+
 	// RowsAffected returns error
 	db := newMockDB(
 		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
@@ -426,6 +456,8 @@ func TestElector_RowsAffectedError(t *testing.T) {
 // --- SQL Query Tests ---
 
 func TestElector_DeletesExpiredLeaders(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{
 		ClientID:      "test-client",
@@ -452,6 +484,8 @@ func TestElector_DeletesExpiredLeaders(t *testing.T) {
 }
 
 func TestElector_ElectionSQL_InsertOnConflict(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{
 		ClientID:      "test-client",
@@ -487,6 +521,8 @@ func TestElector_ElectionSQL_InsertOnConflict(t *testing.T) {
 // --- Subscriber Tests ---
 
 func TestElector_Subscribe_InitialState(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBNotElected()
 	e := NewElector(db, ElectorConfig{})
 
@@ -503,6 +539,8 @@ func TestElector_Subscribe_InitialState(t *testing.T) {
 }
 
 func TestElector_Subscribe_GainLeadership(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -530,6 +568,8 @@ func TestElector_Subscribe_GainLeadership(t *testing.T) {
 }
 
 func TestElector_Subscribe_LoseLeadership(t *testing.T) {
+	t.Parallel()
+
 	db := newMockDB(
 		// First: win
 		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
@@ -577,6 +617,8 @@ func TestElector_Subscribe_LoseLeadership(t *testing.T) {
 }
 
 func TestElector_Subscribe_MultipleSubscribers(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -609,6 +651,8 @@ func TestElector_Subscribe_MultipleSubscribers(t *testing.T) {
 }
 
 func TestElector_Subscribe_FullChannel(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -638,6 +682,8 @@ func TestElector_Subscribe_FullChannel(t *testing.T) {
 // --- Election Loop Tests ---
 
 func TestElector_ElectionLoop_ContextCancellation(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBElected()
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -668,6 +714,8 @@ func TestElector_ElectionLoop_ContextCancellation(t *testing.T) {
 }
 
 func TestElector_Resign_DBError(t *testing.T) {
+	t.Parallel()
+
 	// First attempts: win leadership
 	// resign: error
 	db := newMockDB(
@@ -695,6 +743,8 @@ func TestElector_Resign_DBError(t *testing.T) {
 // --- attemptElect direct test ---
 
 func TestAttemptElect_DeleteExpiredError(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBError(fmt.Errorf("delete error"))
 	e := NewElector(db, ElectorConfig{})
 
@@ -708,6 +758,8 @@ func TestAttemptElect_DeleteExpiredError(t *testing.T) {
 }
 
 func TestAttemptElect_InsertError(t *testing.T) {
+	t.Parallel()
+
 	db := newMockDB(
 		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
 		mockExecResult{result: nil, err: fmt.Errorf("insert error")},
@@ -724,6 +776,8 @@ func TestAttemptElect_InsertError(t *testing.T) {
 }
 
 func TestAttemptElect_Success(t *testing.T) {
+	t.Parallel()
+
 	db := newMockDB(
 		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
 		mockExecResult{result: &mockResult{rowsAffected: 1}, err: nil},
@@ -740,6 +794,8 @@ func TestAttemptElect_Success(t *testing.T) {
 }
 
 func TestAttemptElect_NotElected(t *testing.T) {
+	t.Parallel()
+
 	db := newMockDB(
 		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
 		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
@@ -758,6 +814,8 @@ func TestAttemptElect_NotElected(t *testing.T) {
 // --- Resign direct test ---
 
 func TestResign_Success(t *testing.T) {
+	t.Parallel()
+
 	db := newMockDB(
 		mockExecResult{result: &mockResult{rowsAffected: 1}, err: nil},
 	)
@@ -782,6 +840,8 @@ func TestResign_Success(t *testing.T) {
 }
 
 func TestResign_Error(t *testing.T) {
+	t.Parallel()
+
 	db := mockDBError(fmt.Errorf("db error"))
 	e := NewElector(db, ElectorConfig{ClientID: "test"})
 

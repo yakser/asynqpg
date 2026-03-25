@@ -21,6 +21,8 @@ func waitUntil(t *testing.T, cond func() bool, timeout time.Duration) {
 }
 
 func TestWorkerPoolExecutesAllTasks(t *testing.T) {
+	t.Parallel()
+
 	pool := NewWorkerPool(4)
 	t.Cleanup(pool.Close)
 
@@ -56,6 +58,8 @@ func TestWorkerPoolExecutesAllTasks(t *testing.T) {
 }
 
 func TestWorkerPoolResizeIncrease(t *testing.T) {
+	t.Parallel()
+
 	pool := NewWorkerPool(1)
 	t.Cleanup(pool.Close)
 
@@ -114,6 +118,8 @@ func TestWorkerPoolResizeIncrease(t *testing.T) {
 }
 
 func TestWorkerPoolResizeDecreaseNoDeadlock(t *testing.T) {
+	t.Parallel()
+
 	pool := NewWorkerPool(8)
 
 	const tasksCount = 50
@@ -147,6 +153,8 @@ func TestWorkerPoolResizeDecreaseNoDeadlock(t *testing.T) {
 }
 
 func TestWorkerPoolSubmitAfterClose(t *testing.T) {
+	t.Parallel()
+
 	pool := NewWorkerPool(2)
 
 	if err := pool.Submit(func() {}); err != nil {
@@ -161,6 +169,8 @@ func TestWorkerPoolSubmitAfterClose(t *testing.T) {
 }
 
 func TestWorkerPoolCloseIdempotent(t *testing.T) {
+	t.Parallel()
+
 	pool := NewWorkerPool(2)
 
 	if err := pool.Submit(func() {}); err != nil {
@@ -183,6 +193,8 @@ func TestWorkerPoolCloseIdempotent(t *testing.T) {
 }
 
 func TestWorkerPoolFreeWorkers(t *testing.T) {
+	t.Parallel()
+
 	pool := NewWorkerPool(3)
 	t.Cleanup(pool.Close)
 

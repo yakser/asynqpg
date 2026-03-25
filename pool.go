@@ -16,6 +16,14 @@ type Querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// Tx represents a database transaction.
+// *sql.Tx and *sqlx.Tx satisfy this interface natively.
+type Tx interface {
+	Querier
+	Commit() error
+	Rollback() error
+}
+
 // Pool represents a database connection pool.
 // *sqlx.DB satisfies this interface natively.
 type Pool interface {

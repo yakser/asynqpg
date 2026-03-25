@@ -29,7 +29,7 @@ func (m *mockRepo) GetTaskByID(ctx context.Context, id int64) (*repository.FullT
 	return m.getTaskByIDFn(ctx, id)
 }
 
-func (m *mockRepo) GetTaskByIDWithExecutor(_ context.Context, _ asynqpg.Querier, _ int64) (*repository.FullTask, error) {
+func (m *mockRepo) GetTaskByIDWithTx(_ context.Context, _ asynqpg.Tx, _ int64) (*repository.FullTask, error) {
 	return nil, fmt.Errorf("not implemented in mock")
 }
 
@@ -37,7 +37,7 @@ func (m *mockRepo) ListTasks(ctx context.Context, params repository.ListTasksPar
 	return m.listTasksFn(ctx, params)
 }
 
-func (m *mockRepo) ListTasksWithExecutor(_ context.Context, _ asynqpg.Querier, _ repository.ListTasksParams) (*repository.ListTasksResult, error) {
+func (m *mockRepo) ListTasksWithTx(_ context.Context, _ asynqpg.Tx, _ repository.ListTasksParams) (*repository.ListTasksResult, error) {
 	return nil, fmt.Errorf("not implemented in mock")
 }
 
@@ -45,7 +45,7 @@ func (m *mockRepo) CancelTaskByID(ctx context.Context, id int64) (*repository.Fu
 	return m.cancelTaskByIDFn(ctx, id)
 }
 
-func (m *mockRepo) CancelTaskByIDWithExecutor(_ context.Context, _ asynqpg.Querier, _ int64) (*repository.FullTask, bool, error) {
+func (m *mockRepo) CancelTaskByIDWithTx(_ context.Context, _ asynqpg.Tx, _ int64) (*repository.FullTask, bool, error) {
 	return nil, false, fmt.Errorf("not implemented in mock")
 }
 
@@ -53,7 +53,7 @@ func (m *mockRepo) RetryTaskByID(ctx context.Context, id int64) (*repository.Ful
 	return m.retryTaskByIDFn(ctx, id)
 }
 
-func (m *mockRepo) RetryTaskByIDWithExecutor(_ context.Context, _ asynqpg.Querier, _ int64) (*repository.FullTask, bool, error) {
+func (m *mockRepo) RetryTaskByIDWithTx(_ context.Context, _ asynqpg.Tx, _ int64) (*repository.FullTask, bool, error) {
 	return nil, false, fmt.Errorf("not implemented in mock")
 }
 
@@ -61,7 +61,7 @@ func (m *mockRepo) DeleteTaskByID(ctx context.Context, id int64) (*repository.Fu
 	return m.deleteTaskByIDFn(ctx, id)
 }
 
-func (m *mockRepo) DeleteTaskByIDWithExecutor(_ context.Context, _ asynqpg.Querier, _ int64) (*repository.FullTask, bool, error) {
+func (m *mockRepo) DeleteTaskByIDWithTx(_ context.Context, _ asynqpg.Tx, _ int64) (*repository.FullTask, bool, error) {
 	return nil, false, fmt.Errorf("not implemented in mock")
 }
 

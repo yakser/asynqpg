@@ -309,7 +309,7 @@ func (c *Consumer) Start() error {
 
 	// Start batch completer if enabled
 	if c.enableBatchCompleter && c.completer != nil {
-		if err := c.completer.Start(c.ctx); err != nil {
+		if err := c.completer.Start(context.Background()); err != nil {
 			return fmt.Errorf("start batch completer: %w", err)
 		}
 	}
