@@ -12,10 +12,10 @@ import (
 	"github.com/yakser/asynqpg/ui/uiauth"
 )
 
-//go:generate go tool mockery --case underscore --with-expecter --exported --name AuthProvider
-
 // AuthProvider defines the interface for OAuth/SSO authentication providers.
 // Implementations handle the specific OAuth flow for a given identity provider.
+//
+//go:generate go tool mockery --case underscore --with-expecter --exported --name AuthProvider
 type AuthProvider interface {
 	// ID returns a unique identifier for this provider (e.g. "github", "google", "okta").
 	ID() string
@@ -32,11 +32,11 @@ type AuthProvider interface {
 	CompleteAuth(w http.ResponseWriter, r *http.Request) (*uiauth.User, error)
 }
 
-//go:generate go tool mockery --case underscore --with-expecter --exported --name SessionStore
-
 // SessionStore manages user sessions. The default in-memory implementation
 // is suitable for single-server deployments. For multi-server setups,
 // provide a shared store (e.g. PostgreSQL, Redis).
+//
+//go:generate go tool mockery --case underscore --with-expecter --exported --name SessionStore
 type SessionStore interface {
 	Get(ctx context.Context, token string) (*uiauth.Session, error)
 	Save(ctx context.Context, session *uiauth.Session) error

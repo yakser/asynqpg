@@ -40,9 +40,9 @@ type TaskHandler interface {
 	Handle(ctx context.Context, task *asynqpg.TaskInfo) error
 }
 
-//go:generate go tool mockery --case underscore --with-expecter --name Completer
-
 // Completer defines the interface for task completion operations.
+//
+//go:generate go tool mockery --case underscore --with-expecter --name Completer
 type Completer interface {
 	Start(ctx context.Context) error
 	Stop()

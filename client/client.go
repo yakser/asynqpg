@@ -15,9 +15,9 @@ import (
 	"github.com/yakser/asynqpg/internal/repository"
 )
 
-//go:generate go tool mockery --case underscore --with-expecter --exported --name taskRepository
-
 // taskRepository defines the repository operations needed by Client.
+//
+//go:generate go tool mockery --case underscore --with-expecter --exported --name taskRepository
 type taskRepository interface {
 	GetTaskByID(ctx context.Context, id int64) (*repository.FullTask, error)
 	GetTaskByIDWithTx(ctx context.Context, tx asynqpg.Tx, id int64) (*repository.FullTask, error)
