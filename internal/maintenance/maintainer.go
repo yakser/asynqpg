@@ -44,16 +44,14 @@ func (m *Maintainer) Start(ctx context.Context) error {
 	m.started = true
 
 	for _, svc := range m.services {
-		m.wg.Add(1)
-		go func() {
-			defer m.wg.Done()
+		m.wg.Go(func() {
 			if err := svc.Start(ctx); err != nil {
 				m.logger.Error("maintenance service failed to start",
 					"service", svc.Name(),
 					"error", err,
 				)
 			}
-		}()
+		})
 	}
 
 	m.logger.Info("maintenance services started", "count", len(m.services))

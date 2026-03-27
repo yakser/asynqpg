@@ -29,9 +29,7 @@ func NewWorkerPool(workerCount int) *WorkerPool {
 }
 
 func (p *WorkerPool) startWorker(stopCh <-chan struct{}) {
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		for {
 			select {
 			case <-stopCh:
@@ -47,7 +45,7 @@ func (p *WorkerPool) startWorker(stopCh <-chan struct{}) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 func (p *WorkerPool) Resize(n int) {
