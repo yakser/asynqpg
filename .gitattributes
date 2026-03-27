@@ -1,0 +1,2 @@
+# Generated mocks -- hide from diffs
+**/mocks/*.go linguist-generated=true -diff
