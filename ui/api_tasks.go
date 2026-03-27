@@ -177,8 +177,7 @@ func parseListParams(r *http.Request) (*ListTasksParams, error) {
 	}
 
 	if v := r.URL.Query().Get("status"); v != "" {
-		statuses := strings.Split(v, ",")
-		for _, s := range statuses {
+		for s := range strings.SplitSeq(v, ",") {
 			s = strings.TrimSpace(s)
 			if !validStatuses[s] {
 				return nil, errors.New("invalid status: " + s)
@@ -195,8 +194,7 @@ func parseListParams(r *http.Request) (*ListTasksParams, error) {
 	}
 
 	if v := r.URL.Query().Get("id"); v != "" {
-		idStrs := strings.Split(v, ",")
-		for _, idStr := range idStrs {
+		for idStr := range strings.SplitSeq(v, ",") {
 			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
 			if err != nil || id <= 0 {
 				return nil, errors.New("invalid task id: " + idStr)
