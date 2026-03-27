@@ -16,7 +16,7 @@ type WorkerPool struct {
 	wg        sync.WaitGroup
 	closed    bool
 
-	busy int64
+	busy atomic.Int64
 }
 
 func NewWorkerPool(workerCount int) *WorkerPool {
@@ -39,9 +39,9 @@ func (p *WorkerPool) startWorker(stopCh <-chan struct{}) {
 					return
 				}
 				if task != nil {
-					atomic.AddInt64(&p.busy, 1)
+					p.busy.Add(1)
 					task()
-					atomic.AddInt64(&p.busy, -1)
+					p.busy.Add(-1)
 				}
 			}
 		}
@@ -116,7 +116,7 @@ func (p *WorkerPool) FreeWorkers() int {
 	workers := p.workers
 	p.mu.Unlock()
 
-	busy := int(atomic.LoadInt64(&p.busy))
+	busy := int(p.busy.Load())
 	if busy <= 0 {
 		return workers
 	}
