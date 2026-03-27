@@ -16,13 +16,13 @@ func TestWorkerPoolExecutesAllTasks(t *testing.T) {
 	t.Cleanup(pool.Close)
 
 	const n = 100
-	var done int64
+	var done atomic.Int64
 	var wg sync.WaitGroup
 	wg.Add(n)
 
 	for range n {
 		err := pool.Submit(func() {
-			atomic.AddInt64(&done, 1)
+			done.Add(1)
 			wg.Done()
 		})
 		require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestWorkerPoolExecutesAllTasks(t *testing.T) {
 		t.Fatal("timeout waiting for tasks")
 	}
 
-	require.Equal(t, int64(n), atomic.LoadInt64(&done))
+	require.Equal(t, int64(n), done.Load())
 }
 
 func TestWorkerPoolResizeIncrease(t *testing.T) {
@@ -54,26 +54,26 @@ func TestWorkerPoolResizeIncrease(t *testing.T) {
 	wg.Add(tasksCount)
 
 	var (
-		activeWorkers          int64
-		maxObservedParallelism int64
+		activeWorkers          atomic.Int64
+		maxObservedParallelism atomic.Int64
 	)
 
 	work := func() {
-		concurrencyAtStart := atomic.AddInt64(&activeWorkers, 1)
+		concurrencyAtStart := activeWorkers.Add(1)
 
 		time.Sleep(3 * time.Millisecond)
 
 		for {
-			currentMax := atomic.LoadInt64(&maxObservedParallelism)
+			currentMax := maxObservedParallelism.Load()
 			if concurrencyAtStart <= currentMax {
 				break
 			}
-			if atomic.CompareAndSwapInt64(&maxObservedParallelism, currentMax, concurrencyAtStart) {
+			if maxObservedParallelism.CompareAndSwap(currentMax, concurrencyAtStart) {
 				break
 			}
 		}
 
-		atomic.AddInt64(&activeWorkers, -1)
+		activeWorkers.Add(-1)
 		wg.Done()
 	}
 
@@ -97,7 +97,7 @@ func TestWorkerPoolResizeIncrease(t *testing.T) {
 		t.Fatal("timeout waiting for tasks after resize")
 	}
 
-	require.GreaterOrEqual(t, maxObservedParallelism, int64(2), "expected parallelism to increase after resize")
+	require.GreaterOrEqual(t, maxObservedParallelism.Load(), int64(2), "expected parallelism to increase after resize")
 }
 
 func TestWorkerPoolResizeDecreaseNoDeadlock(t *testing.T) {
