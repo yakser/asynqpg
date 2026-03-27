@@ -151,7 +151,7 @@ func TestRunner_ContextCancellation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	err = runner.Start(ctx)
 	require.NoError(t, err)
 

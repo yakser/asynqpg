@@ -132,7 +132,7 @@ func TestMemorySessionStore_ConcurrentAccess(t *testing.T) {
 func TestMemorySessionStore_CleanupExpired(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	store := &MemorySessionStore{
 		cancel: cancel,
 		done:   make(chan struct{}),
