@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -8,7 +9,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/yakser/asynqpg/ui/mocks"
 )
 
 func TestHandleStats(t *testing.T) {
@@ -17,11 +21,12 @@ func TestHandleStats(t *testing.T) {
 	t.Run("aggregates correctly", func(t *testing.T) {
 		t.Parallel()
 
-		pool := &mockPool{
-			selectFn: func(dest any) error {
+		p := mocks.NewPool(t)
+		p.EXPECT().SelectContext(mock.Anything, mock.Anything, mock.Anything).
+			Run(func(_ context.Context, dest interface{}, _ string, _ ...interface{}) {
 				stats, ok := dest.(*[]TaskTypeStat)
 				if !ok {
-					return nil
+					return
 				}
 				*stats = []TaskTypeStat{
 					{Type: "email.send", Status: "pending", Count: 10},
@@ -30,15 +35,14 @@ func TestHandleStats(t *testing.T) {
 					{Type: "report.gen", Status: "pending", Count: 3},
 					{Type: "report.gen", Status: "running", Count: 1},
 				}
-				return nil
-			},
-		}
+			}).
+			Return(nil).Maybe()
 
 		h := &handler{
-			pool:   pool,
-			repo:   newRepository(pool),
+			pool:   p,
+			repo:   newRepository(p),
 			logger: slog.Default(),
-			opts:   HandlerOpts{Pool: pool},
+			opts:   HandlerOpts{Pool: p},
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
@@ -70,17 +74,15 @@ func TestHandleStats(t *testing.T) {
 	t.Run("empty database", func(t *testing.T) {
 		t.Parallel()
 
-		pool := &mockPool{
-			selectFn: func(dest any) error {
-				return nil
-			},
-		}
+		p := mocks.NewPool(t)
+		p.EXPECT().SelectContext(mock.Anything, mock.Anything, mock.Anything).
+			Return(nil).Maybe()
 
 		h := &handler{
-			pool:   pool,
-			repo:   newRepository(pool),
+			pool:   p,
+			repo:   newRepository(p),
 			logger: slog.Default(),
-			opts:   HandlerOpts{Pool: pool},
+			opts:   HandlerOpts{Pool: p},
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
@@ -110,22 +112,22 @@ func TestHandleTaskTypes(t *testing.T) {
 	t.Run("returns types", func(t *testing.T) {
 		t.Parallel()
 
-		pool := &mockPool{
-			selectFn: func(dest any) error {
+		p := mocks.NewPool(t)
+		p.EXPECT().SelectContext(mock.Anything, mock.Anything, mock.Anything).
+			Run(func(_ context.Context, dest interface{}, _ string, _ ...interface{}) {
 				types, ok := dest.(*[]string)
 				if !ok {
-					return nil
+					return
 				}
 				*types = []string{"email.send", "notification.push", "report.gen"}
-				return nil
-			},
-		}
+			}).
+			Return(nil).Maybe()
 
 		h := &handler{
-			pool:   pool,
-			repo:   newRepository(pool),
+			pool:   p,
+			repo:   newRepository(p),
 			logger: slog.Default(),
-			opts:   HandlerOpts{Pool: pool},
+			opts:   HandlerOpts{Pool: p},
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/api/task-types", nil)
@@ -147,17 +149,15 @@ func TestHandleTaskTypes(t *testing.T) {
 	t.Run("empty returns empty array", func(t *testing.T) {
 		t.Parallel()
 
-		pool := &mockPool{
-			selectFn: func(dest any) error {
-				return nil
-			},
-		}
+		p := mocks.NewPool(t)
+		p.EXPECT().SelectContext(mock.Anything, mock.Anything, mock.Anything).
+			Return(nil).Maybe()
 
 		h := &handler{
-			pool:   pool,
-			repo:   newRepository(pool),
+			pool:   p,
+			repo:   newRepository(p),
 			logger: slog.Default(),
-			opts:   HandlerOpts{Pool: pool},
+			opts:   HandlerOpts{Pool: p},
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/api/task-types", nil)

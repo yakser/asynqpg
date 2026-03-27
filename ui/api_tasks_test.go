@@ -12,6 +12,7 @@ import (
 
 	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/client"
+	"github.com/yakser/asynqpg/ui/mocks"
 )
 
 func TestParseListParams(t *testing.T) {
@@ -233,7 +234,7 @@ func TestTaskInfoToDetailResponse(t *testing.T) {
 func TestHandleGetTask_InvalidID(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHandler(HandlerOpts{Pool: &mockPool{}})
+	h, err := NewHandler(HandlerOpts{Pool: mocks.NewPool(t)})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tasks/abc", nil)
@@ -251,7 +252,7 @@ func TestHandleGetTask_InvalidID(t *testing.T) {
 func TestHandleGetTaskPayload_InvalidID(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHandler(HandlerOpts{Pool: &mockPool{}})
+	h, err := NewHandler(HandlerOpts{Pool: mocks.NewPool(t)})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tasks/xyz/payload", nil)
@@ -265,7 +266,7 @@ func TestHandleGetTaskPayload_InvalidID(t *testing.T) {
 func TestHandleListTasks_InvalidParams(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHandler(HandlerOpts{Pool: &mockPool{}})
+	h, err := NewHandler(HandlerOpts{Pool: mocks.NewPool(t)})
 	require.NoError(t, err)
 
 	t.Run("invalid status", func(t *testing.T) {

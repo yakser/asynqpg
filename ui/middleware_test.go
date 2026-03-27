@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/yakser/asynqpg/ui/uiauth"
 )
 
 func TestBasicAuthMiddleware(t *testing.T) {
@@ -154,15 +156,15 @@ func TestSessionAuthMiddleware_ValidSession(t *testing.T) {
 	store := NewMemorySessionStore()
 	defer store.Close()
 
-	sess := &Session{
+	sess := &uiauth.Session{
 		Token:     "valid-token",
-		User:      User{ID: "42", Name: "Alice", Provider: "github"},
+		User:      uiauth.User{ID: "42", Name: "Alice", Provider: "github"},
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	require.NoError(t, store.Save(context.Background(), sess))
 
-	var capturedUser *User
+	var capturedUser *uiauth.User
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUser = UserFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
@@ -237,9 +239,9 @@ func TestSessionAuthMiddleware_ExpiredSession(t *testing.T) {
 	defer store.Close()
 
 	// Save a session that's already expired but hasn't been cleaned up yet.
-	sess := &Session{
+	sess := &uiauth.Session{
 		Token:     "expired-token",
-		User:      User{ID: "1"},
+		User:      uiauth.User{ID: "1"},
 		CreatedAt: time.Now().Add(-2 * time.Hour),
 		ExpiresAt: time.Now().Add(-time.Hour),
 	}
@@ -268,15 +270,15 @@ func TestSessionAuthMiddleware_UserInContext(t *testing.T) {
 	store := NewMemorySessionStore()
 	defer store.Close()
 
-	sess := &Session{
+	sess := &uiauth.Session{
 		Token:     "ctx-test-token",
-		User:      User{ID: "99", Name: "Bob", Provider: "google", Email: "bob@example.com"},
+		User:      uiauth.User{ID: "99", Name: "Bob", Provider: "google", Email: "bob@example.com"},
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	require.NoError(t, store.Save(context.Background(), sess))
 
-	var gotUser *User
+	var gotUser *uiauth.User
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUser = UserFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)

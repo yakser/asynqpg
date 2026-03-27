@@ -5,6 +5,8 @@ import (
 	"database/sql"
 )
 
+//go:generate go tool mockery --case underscore --with-expecter --name Querier
+
 // Querier can execute queries and scan results into structs.
 // Both database connection pools and transactions satisfy this interface.
 // *sqlx.DB and *sqlx.Tx implement it natively.
@@ -16,6 +18,8 @@ type Querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+//go:generate go tool mockery --case underscore --with-expecter --name Tx
+
 // Tx represents a database transaction.
 // *sql.Tx and *sqlx.Tx satisfy this interface natively.
 type Tx interface {
@@ -23,6 +27,8 @@ type Tx interface {
 	Commit() error
 	Rollback() error
 }
+
+//go:generate go tool mockery --case underscore --with-expecter --name Pool
 
 // Pool represents a database connection pool.
 // *sqlx.DB satisfies this interface natively.

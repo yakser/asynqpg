@@ -9,61 +9,13 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/yakser/asynqpg"
+	"github.com/yakser/asynqpg/client/mocks"
 	"github.com/yakser/asynqpg/internal/repository"
 )
-
-// --- Mock repository ---
-
-type mockRepo struct {
-	getTaskByIDFn    func(ctx context.Context, id int64) (*repository.FullTask, error)
-	listTasksFn      func(ctx context.Context, params repository.ListTasksParams) (*repository.ListTasksResult, error)
-	cancelTaskByIDFn func(ctx context.Context, id int64) (*repository.FullTask, bool, error)
-	retryTaskByIDFn  func(ctx context.Context, id int64) (*repository.FullTask, bool, error)
-	deleteTaskByIDFn func(ctx context.Context, id int64) (*repository.FullTask, bool, error)
-}
-
-func (m *mockRepo) GetTaskByID(ctx context.Context, id int64) (*repository.FullTask, error) {
-	return m.getTaskByIDFn(ctx, id)
-}
-
-func (m *mockRepo) GetTaskByIDWithTx(_ context.Context, _ asynqpg.Tx, _ int64) (*repository.FullTask, error) {
-	return nil, fmt.Errorf("not implemented in mock")
-}
-
-func (m *mockRepo) ListTasks(ctx context.Context, params repository.ListTasksParams) (*repository.ListTasksResult, error) {
-	return m.listTasksFn(ctx, params)
-}
-
-func (m *mockRepo) ListTasksWithTx(_ context.Context, _ asynqpg.Tx, _ repository.ListTasksParams) (*repository.ListTasksResult, error) {
-	return nil, fmt.Errorf("not implemented in mock")
-}
-
-func (m *mockRepo) CancelTaskByID(ctx context.Context, id int64) (*repository.FullTask, bool, error) {
-	return m.cancelTaskByIDFn(ctx, id)
-}
-
-func (m *mockRepo) CancelTaskByIDWithTx(_ context.Context, _ asynqpg.Tx, _ int64) (*repository.FullTask, bool, error) {
-	return nil, false, fmt.Errorf("not implemented in mock")
-}
-
-func (m *mockRepo) RetryTaskByID(ctx context.Context, id int64) (*repository.FullTask, bool, error) {
-	return m.retryTaskByIDFn(ctx, id)
-}
-
-func (m *mockRepo) RetryTaskByIDWithTx(_ context.Context, _ asynqpg.Tx, _ int64) (*repository.FullTask, bool, error) {
-	return nil, false, fmt.Errorf("not implemented in mock")
-}
-
-func (m *mockRepo) DeleteTaskByID(ctx context.Context, id int64) (*repository.FullTask, bool, error) {
-	return m.deleteTaskByIDFn(ctx, id)
-}
-
-func (m *mockRepo) DeleteTaskByIDWithTx(_ context.Context, _ asynqpg.Tx, _ int64) (*repository.FullTask, bool, error) {
-	return nil, false, fmt.Errorf("not implemented in mock")
-}
 
 // --- Helpers ---
 
@@ -95,11 +47,9 @@ func newFinalizedTask(id int64, status string) *repository.FullTask {
 func TestUnitGetTask_Success(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		getTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, error) {
-			return newTestFullTask(id, "pending"), nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().GetTaskByID(mock.Anything, int64(42)).
+		Return(newTestFullTask(42, "pending"), nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.GetTask(context.Background(), 42)
@@ -114,11 +64,9 @@ func TestUnitGetTask_Success(t *testing.T) {
 func TestUnitGetTask_NotFound(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		getTaskByIDFn: func(_ context.Context, _ int64) (*repository.FullTask, error) {
-			return nil, fmt.Errorf("get task by id: %w", sql.ErrNoRows)
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().GetTaskByID(mock.Anything, int64(999)).
+		Return(nil, fmt.Errorf("get task by id: %w", sql.ErrNoRows)).Once()
 	c := newWithRepo(repo)
 
 	_, err := c.GetTask(context.Background(), 999)
@@ -129,11 +77,9 @@ func TestUnitGetTask_NotFound(t *testing.T) {
 func TestUnitGetTask_RepoError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		getTaskByIDFn: func(_ context.Context, _ int64) (*repository.FullTask, error) {
-			return nil, fmt.Errorf("connection refused")
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().GetTaskByID(mock.Anything, int64(1)).
+		Return(nil, fmt.Errorf("connection refused")).Once()
 	c := newWithRepo(repo)
 
 	_, err := c.GetTask(context.Background(), 1)
@@ -148,12 +94,9 @@ func TestUnitGetTask_RepoError(t *testing.T) {
 func TestUnitCancelTask_Updated(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		cancelTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			task := newFinalizedTask(id, "cancelled")
-			return task, true, nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().CancelTaskByID(mock.Anything, int64(10)).
+		Return(newFinalizedTask(10, "cancelled"), true, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.CancelTask(context.Background(), 10)
@@ -166,12 +109,9 @@ func TestUnitCancelTask_Updated(t *testing.T) {
 func TestUnitCancelTask_RunningSuccess(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		cancelTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			task := newFinalizedTask(id, "cancelled")
-			return task, true, nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().CancelTaskByID(mock.Anything, int64(10)).
+		Return(newFinalizedTask(10, "cancelled"), true, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.CancelTask(context.Background(), 10)
@@ -184,11 +124,9 @@ func TestUnitCancelTask_RunningSuccess(t *testing.T) {
 func TestUnitCancelTask_CompletedError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		cancelTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			return newFinalizedTask(id, "completed"), false, nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().CancelTaskByID(mock.Anything, int64(10)).
+		Return(newFinalizedTask(10, "completed"), false, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.CancelTask(context.Background(), 10)
@@ -200,11 +138,9 @@ func TestUnitCancelTask_CompletedError(t *testing.T) {
 func TestUnitCancelTask_AlreadyCancelled(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		cancelTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			return newFinalizedTask(id, "cancelled"), false, nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().CancelTaskByID(mock.Anything, int64(10)).
+		Return(newFinalizedTask(10, "cancelled"), false, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.CancelTask(context.Background(), 10)
@@ -216,11 +152,9 @@ func TestUnitCancelTask_AlreadyCancelled(t *testing.T) {
 func TestUnitCancelTask_NotFound(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		cancelTaskByIDFn: func(_ context.Context, _ int64) (*repository.FullTask, bool, error) {
-			return nil, false, fmt.Errorf("cancel task: %w", sql.ErrNoRows)
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().CancelTaskByID(mock.Anything, int64(999)).
+		Return(nil, false, fmt.Errorf("cancel task: %w", sql.ErrNoRows)).Once()
 	c := newWithRepo(repo)
 
 	_, err := c.CancelTask(context.Background(), 999)
@@ -233,13 +167,12 @@ func TestUnitCancelTask_NotFound(t *testing.T) {
 func TestUnitRetryTask_Updated(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		retryTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			task := newTestFullTask(id, "pending")
-			task.AttemptsLeft = 1
-			return task, true, nil
-		},
-	}
+	task := newTestFullTask(10, "pending")
+	task.AttemptsLeft = 1
+
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().RetryTaskByID(mock.Anything, int64(10)).
+		Return(task, true, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.RetryTask(context.Background(), 10)
@@ -252,11 +185,9 @@ func TestUnitRetryTask_Updated(t *testing.T) {
 func TestUnitRetryTask_PendingError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		retryTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			return newTestFullTask(id, "pending"), false, nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().RetryTaskByID(mock.Anything, int64(10)).
+		Return(newTestFullTask(10, "pending"), false, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.RetryTask(context.Background(), 10)
@@ -268,11 +199,9 @@ func TestUnitRetryTask_PendingError(t *testing.T) {
 func TestUnitRetryTask_RunningError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		retryTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			return newTestFullTask(id, "running"), false, nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().RetryTaskByID(mock.Anything, int64(10)).
+		Return(newTestFullTask(10, "running"), false, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.RetryTask(context.Background(), 10)
@@ -284,11 +213,9 @@ func TestUnitRetryTask_RunningError(t *testing.T) {
 func TestUnitRetryTask_CompletedError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		retryTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			return newFinalizedTask(id, "completed"), false, nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().RetryTaskByID(mock.Anything, int64(10)).
+		Return(newFinalizedTask(10, "completed"), false, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.RetryTask(context.Background(), 10)
@@ -300,11 +227,9 @@ func TestUnitRetryTask_CompletedError(t *testing.T) {
 func TestUnitRetryTask_NotFound(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		retryTaskByIDFn: func(_ context.Context, _ int64) (*repository.FullTask, bool, error) {
-			return nil, false, fmt.Errorf("retry task: %w", sql.ErrNoRows)
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().RetryTaskByID(mock.Anything, int64(999)).
+		Return(nil, false, fmt.Errorf("retry task: %w", sql.ErrNoRows)).Once()
 	c := newWithRepo(repo)
 
 	_, err := c.RetryTask(context.Background(), 999)
@@ -317,11 +242,9 @@ func TestUnitRetryTask_NotFound(t *testing.T) {
 func TestUnitDeleteTask_Deleted(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		deleteTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			return newTestFullTask(id, "pending"), true, nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().DeleteTaskByID(mock.Anything, int64(10)).
+		Return(newTestFullTask(10, "pending"), true, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.DeleteTask(context.Background(), 10)
@@ -333,11 +256,9 @@ func TestUnitDeleteTask_Deleted(t *testing.T) {
 func TestUnitDeleteTask_RunningError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		deleteTaskByIDFn: func(_ context.Context, id int64) (*repository.FullTask, bool, error) {
-			return newTestFullTask(id, "running"), false, nil
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().DeleteTaskByID(mock.Anything, int64(10)).
+		Return(newTestFullTask(10, "running"), false, nil).Once()
 	c := newWithRepo(repo)
 
 	got, err := c.DeleteTask(context.Background(), 10)
@@ -349,11 +270,9 @@ func TestUnitDeleteTask_RunningError(t *testing.T) {
 func TestUnitDeleteTask_NotFound(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		deleteTaskByIDFn: func(_ context.Context, _ int64) (*repository.FullTask, bool, error) {
-			return nil, false, fmt.Errorf("delete task: %w", sql.ErrNoRows)
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().DeleteTaskByID(mock.Anything, int64(999)).
+		Return(nil, false, fmt.Errorf("delete task: %w", sql.ErrNoRows)).Once()
 	c := newWithRepo(repo)
 
 	_, err := c.DeleteTask(context.Background(), 999)
@@ -366,19 +285,19 @@ func TestUnitDeleteTask_NotFound(t *testing.T) {
 func TestUnitListTasks_Success(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		listTasksFn: func(_ context.Context, params repository.ListTasksParams) (*repository.ListTasksResult, error) {
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().ListTasks(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, params repository.ListTasksParams) {
 			assert.Equal(t, 50, params.Limit)
 			assert.Equal(t, []string{"failed"}, params.Statuses)
-			return &repository.ListTasksResult{
-				Tasks: []repository.FullTask{
-					*newFinalizedTask(1, "failed"),
-					*newFinalizedTask(2, "failed"),
-				},
-				Total: 2,
-			}, nil
-		},
-	}
+		}).
+		Return(&repository.ListTasksResult{
+			Tasks: []repository.FullTask{
+				*newFinalizedTask(1, "failed"),
+				*newFinalizedTask(2, "failed"),
+			},
+			Total: 2,
+		}, nil).Once()
 	c := newWithRepo(repo)
 
 	result, err := c.ListTasks(context.Background(),
@@ -393,14 +312,14 @@ func TestUnitListTasks_Success(t *testing.T) {
 func TestUnitListTasks_NilParams(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		listTasksFn: func(_ context.Context, params repository.ListTasksParams) (*repository.ListTasksResult, error) {
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().ListTasks(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, params repository.ListTasksParams) {
 			assert.Equal(t, defaultLimit, params.Limit)
 			assert.Equal(t, "id", params.OrderBy)
 			assert.Equal(t, "ASC", params.OrderDir)
-			return &repository.ListTasksResult{Tasks: []repository.FullTask{}, Total: 0}, nil
-		},
-	}
+		}).
+		Return(&repository.ListTasksResult{Tasks: []repository.FullTask{}, Total: 0}, nil).Once()
 	c := newWithRepo(repo)
 
 	result, err := c.ListTasks(context.Background(), nil)
@@ -413,11 +332,9 @@ func TestUnitListTasks_NilParams(t *testing.T) {
 func TestUnitListTasks_RepoError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRepo{
-		listTasksFn: func(_ context.Context, _ repository.ListTasksParams) (*repository.ListTasksResult, error) {
-			return nil, fmt.Errorf("database timeout")
-		},
-	}
+	repo := mocks.NewTaskRepository(t)
+	repo.EXPECT().ListTasks(mock.Anything, mock.Anything).
+		Return(nil, fmt.Errorf("database timeout")).Once()
 	c := newWithRepo(repo)
 
 	_, err := c.ListTasks(context.Background(), NewListParams())

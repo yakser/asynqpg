@@ -3,127 +3,17 @@ package maintenance
 import (
 	"context"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/yakser/asynqpg"
+	"github.com/yakser/asynqpg/internal/maintenance/mocks"
 	"github.com/yakser/asynqpg/internal/repository"
 )
-
-type mockCleanerRepo struct {
-	mu      sync.Mutex
-	calls   []repository.DeleteOldTasksParams
-	results []deleteResult
-}
-
-type deleteResult struct {
-	count int
-	err   error
-}
-
-func (m *mockCleanerRepo) DeleteOldTasks(_ context.Context, params repository.DeleteOldTasksParams) (int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.calls = append(m.calls, params)
-	idx := len(m.calls) - 1
-	if idx >= len(m.results) {
-		idx = len(m.results) - 1
-	}
-	if idx < 0 {
-		return 0, nil
-	}
-	return m.results[idx].count, m.results[idx].err
-}
-
-func (m *mockCleanerRepo) callCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.calls)
-}
-
-func (m *mockCleanerRepo) getCall(i int) repository.DeleteOldTasksParams {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.calls[i]
-}
-
-type mockRescuerRepo struct {
-	mu             sync.Mutex
-	stuckResults   []stuckResult
-	stuckCallCount int
-	retryParams    []repository.RetryTaskParams
-	retryErr       error
-	failCalls      []failCall
-	failErr        error
-}
-
-type stuckResult struct {
-	tasks []repository.StuckTask
-	err   error
-}
-
-type failCall struct {
-	ids     []int64
-	message string
-}
-
-func (m *mockRescuerRepo) GetStuckTasks(_ context.Context, _ repository.GetStuckTasksParams) ([]repository.StuckTask, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	idx := m.stuckCallCount
-	m.stuckCallCount++
-	if idx >= len(m.stuckResults) {
-		return nil, nil
-	}
-	return m.stuckResults[idx].tasks, m.stuckResults[idx].err
-}
-
-func (m *mockRescuerRepo) RetryTask(_ context.Context, params repository.RetryTaskParams) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.retryParams = append(m.retryParams, params)
-	return m.retryErr
-}
-
-func (m *mockRescuerRepo) FailTasks(_ context.Context, ids []int64, message string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.failCalls = append(m.failCalls, failCall{ids: ids, message: message})
-	return m.failErr
-}
-
-type constantRetryPolicy struct {
-	delay time.Duration
-}
-
-func (p *constantRetryPolicy) NextRetry(_ int) time.Duration {
-	return p.delay
-}
-
-type mockService struct {
-	name     string
-	started  atomic.Bool
-	stopped  atomic.Bool
-	startErr error
-}
-
-func (s *mockService) Start(_ context.Context) error {
-	s.started.Store(true)
-	return s.startErr
-}
-
-func (s *mockService) Stop() {
-	s.stopped.Store(true)
-}
-
-func (s *mockService) Name() string {
-	return s.name
-}
 
 func TestCleanerConfig_SetDefaults(t *testing.T) {
 	t.Parallel()
@@ -159,70 +49,73 @@ func TestCleanerConfig_SetDefaults_CustomValues(t *testing.T) {
 func TestCleaner_Name(t *testing.T) {
 	t.Parallel()
 
-	c := NewCleaner(&mockCleanerRepo{}, CleanerConfig{})
+	repo := mocks.NewCleanerRepo(t)
+	c := NewCleaner(repo, CleanerConfig{})
+
 	require.Equal(t, "cleaner", c.Name())
 }
 
 func TestCleaner_RunOnce_NoTasks(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockCleanerRepo{
-		results: []deleteResult{{count: 0, err: nil}},
-	}
+	repo := mocks.NewCleanerRepo(t)
+	repo.EXPECT().DeleteOldTasks(mock.Anything, mock.Anything).Return(0, nil).Once()
 	c := NewCleaner(repo, CleanerConfig{BatchSize: 100})
 
 	err := c.runOnce(context.Background())
+
 	require.NoError(t, err)
-	require.Equal(t, 1, repo.callCount())
 }
 
 func TestCleaner_RunOnce_SingleBatch(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockCleanerRepo{
-		results: []deleteResult{{count: 50, err: nil}},
-	}
+	repo := mocks.NewCleanerRepo(t)
+	repo.EXPECT().DeleteOldTasks(mock.Anything, mock.Anything).Return(50, nil).Once()
 	c := NewCleaner(repo, CleanerConfig{BatchSize: 100})
 
 	err := c.runOnce(context.Background())
+
 	require.NoError(t, err)
-	require.Equal(t, 1, repo.callCount())
 }
 
 func TestCleaner_RunOnce_MultipleBatches(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockCleanerRepo{
-		results: []deleteResult{
-			{count: 100, err: nil}, // full batch – continue
-			{count: 30, err: nil},  // partial batch – stop
-		},
-	}
+	repo := mocks.NewCleanerRepo(t)
+	repo.EXPECT().DeleteOldTasks(mock.Anything, mock.Anything).Return(100, nil).Once()
+	repo.EXPECT().DeleteOldTasks(mock.Anything, mock.Anything).Return(30, nil).Once()
 	c := NewCleaner(repo, CleanerConfig{BatchSize: 100})
 
 	err := c.runOnce(context.Background())
+
 	require.NoError(t, err)
-	require.Equal(t, 2, repo.callCount())
 }
 
 func TestCleaner_RunOnce_RepoError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockCleanerRepo{
-		results: []deleteResult{{count: 0, err: errors.New("db error")}},
-	}
+	repo := mocks.NewCleanerRepo(t)
+	repo.EXPECT().DeleteOldTasks(mock.Anything, mock.Anything).Return(0, errors.New("db error")).Once()
 	c := NewCleaner(repo, CleanerConfig{BatchSize: 100})
 
 	err := c.runOnce(context.Background())
+
 	require.Error(t, err)
 }
 
 func TestCleaner_RetentionParams(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockCleanerRepo{
-		results: []deleteResult{{count: 0, err: nil}},
-	}
+	repo := mocks.NewCleanerRepo(t)
+
+	var capturedParams repository.DeleteOldTasksParams
+	repo.EXPECT().DeleteOldTasks(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, params repository.DeleteOldTasksParams) {
+			capturedParams = params
+		}).
+		Return(0, nil).Once()
+
 	c := NewCleaner(repo, CleanerConfig{
 		CompletedRetention: time.Hour,
 		FailedRetention:    24 * time.Hour,
@@ -232,25 +125,23 @@ func TestCleaner_RetentionParams(t *testing.T) {
 
 	before := time.Now()
 	err := c.runOnce(context.Background())
-	require.NoError(t, err)
 
-	params := repo.getCall(0)
-	require.Equal(t, 500, params.Limit)
+	require.NoError(t, err)
+	require.Equal(t, 500, capturedParams.Limit)
 
 	// CompletedBefore should be approximately now - 1 hour
 	expectedCompleted := before.Add(-time.Hour)
-	require.WithinDuration(t, expectedCompleted, params.CompletedBefore, time.Second)
+	require.WithinDuration(t, expectedCompleted, capturedParams.CompletedBefore, time.Second)
 
 	expectedFailed := before.Add(-24 * time.Hour)
-	require.WithinDuration(t, expectedFailed, params.FailedBefore, time.Second)
+	require.WithinDuration(t, expectedFailed, capturedParams.FailedBefore, time.Second)
 }
 
 func TestCleaner_StartStop(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockCleanerRepo{
-		results: []deleteResult{{count: 0, err: nil}},
-	}
+	repo := mocks.NewCleanerRepo(t)
+	repo.EXPECT().DeleteOldTasks(mock.Anything, mock.Anything).Return(0, nil).Maybe()
 	c := NewCleaner(repo, CleanerConfig{Interval: 50 * time.Millisecond})
 
 	require.NoError(t, c.Start(context.Background()))
@@ -262,9 +153,8 @@ func TestCleaner_StartStop(t *testing.T) {
 func TestCleaner_Start_Idempotent(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockCleanerRepo{
-		results: []deleteResult{{count: 0, err: nil}},
-	}
+	repo := mocks.NewCleanerRepo(t)
+	repo.EXPECT().DeleteOldTasks(mock.Anything, mock.Anything).Return(0, nil).Maybe()
 	c := NewCleaner(repo, CleanerConfig{Interval: time.Hour})
 
 	require.NoError(t, c.Start(context.Background()))
@@ -276,8 +166,9 @@ func TestCleaner_Start_Idempotent(t *testing.T) {
 func TestCleaner_Stop_NotStarted(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockCleanerRepo{}
+	repo := mocks.NewCleanerRepo(t)
 	c := NewCleaner(repo, CleanerConfig{})
+
 	// Should not panic
 	c.Stop()
 }
@@ -313,216 +204,213 @@ func TestRescuerConfig_SetDefaults_NegativeValues(t *testing.T) {
 func TestRescuer_Name(t *testing.T) {
 	t.Parallel()
 
-	r := NewRescuer(&mockRescuerRepo{}, RescuerConfig{})
+	repo := mocks.NewRescuerRepo(t)
+	r := NewRescuer(repo, RescuerConfig{})
+
 	require.Equal(t, "rescuer", r.Name())
 }
 
 func TestRescuer_RunOnce_NoStuckTasks(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{{tasks: nil, err: nil}},
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return(nil, nil).Once()
 	r := NewRescuer(repo, RescuerConfig{BatchSize: 100})
 
 	err := r.runOnce(context.Background())
+
 	require.NoError(t, err)
 }
 
 func TestRescuer_RunOnce_RetryTasks(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{
-			{tasks: []repository.StuckTask{
-				{ID: 1, Type: "email", AttemptsLeft: 2, AttemptsElapsed: 1},
-				{ID: 2, Type: "email", AttemptsLeft: 1, AttemptsElapsed: 2},
-			}},
-		},
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
+		{ID: 1, Type: "email", AttemptsLeft: 2, AttemptsElapsed: 1},
+		{ID: 2, Type: "email", AttemptsLeft: 1, AttemptsElapsed: 2},
+	}, nil).Once()
+
+	var retryParams []repository.RetryTaskParams
+	repo.EXPECT().RetryTask(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, params repository.RetryTaskParams) {
+			retryParams = append(retryParams, params)
+		}).
+		Return(nil).Times(2)
+
 	r := NewRescuer(repo, RescuerConfig{
 		BatchSize:   100,
-		RetryPolicy: &constantRetryPolicy{delay: 5 * time.Second},
+		RetryPolicy: &asynqpg.ConstantRetryPolicy{Delay: 5 * time.Second},
 	})
 
 	err := r.runOnce(context.Background())
+
 	require.NoError(t, err)
-
-	repo.mu.Lock()
-	defer repo.mu.Unlock()
-
-	require.Len(t, repo.retryParams, 2)
-	require.Equal(t, int64(1), repo.retryParams[0].ID)
-	require.Equal(t, int64(2), repo.retryParams[1].ID)
-	require.Equal(t, "Stuck task rescued by Rescuer", repo.retryParams[0].Message)
+	require.Len(t, retryParams, 2)
+	require.Equal(t, int64(1), retryParams[0].ID)
+	require.Equal(t, int64(2), retryParams[1].ID)
+	require.Equal(t, "Stuck task rescued by Rescuer", retryParams[0].Message)
 }
 
 func TestRescuer_RunOnce_DiscardTasks(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{
-			{tasks: []repository.StuckTask{
-				{ID: 10, Type: "email", AttemptsLeft: 0, AttemptsElapsed: 3},
-				{ID: 11, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 5},
-			}},
-		},
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
+		{ID: 10, Type: "email", AttemptsLeft: 0, AttemptsElapsed: 3},
+		{ID: 11, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 5},
+	}, nil).Once()
+
+	type failCall struct {
+		ids     []int64
+		message string
 	}
+	var failCalls []failCall
+	repo.EXPECT().FailTasks(mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, ids []int64, message string) {
+			failCalls = append(failCalls, failCall{ids: ids, message: message})
+		}).
+		Return(nil).Times(2)
+
 	r := NewRescuer(repo, RescuerConfig{BatchSize: 100})
 
 	err := r.runOnce(context.Background())
+
 	require.NoError(t, err)
-
-	repo.mu.Lock()
-	defer repo.mu.Unlock()
-
-	require.Len(t, repo.failCalls, 2)
-	require.Equal(t, int64(10), repo.failCalls[0].ids[0])
-	require.Equal(t, int64(11), repo.failCalls[1].ids[0])
+	require.Len(t, failCalls, 2)
+	require.Equal(t, int64(10), failCalls[0].ids[0])
+	require.Equal(t, int64(11), failCalls[1].ids[0])
 }
 
 func TestRescuer_RunOnce_MixedTasks(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{
-			{tasks: []repository.StuckTask{
-				{ID: 1, Type: "email", AttemptsLeft: 2, AttemptsElapsed: 1}, // retry
-				{ID: 2, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 3},   // discard
-				{ID: 3, Type: "push", AttemptsLeft: 1, AttemptsElapsed: 2},  // retry
-			}},
-		},
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
+		{ID: 1, Type: "email", AttemptsLeft: 2, AttemptsElapsed: 1}, // retry
+		{ID: 2, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 3},   // discard
+		{ID: 3, Type: "push", AttemptsLeft: 1, AttemptsElapsed: 2},  // retry
+	}, nil).Once()
+
+	repo.EXPECT().RetryTask(mock.Anything, mock.Anything).Return(nil).Times(2)
+	repo.EXPECT().FailTasks(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+
 	r := NewRescuer(repo, RescuerConfig{
 		BatchSize:   100,
-		RetryPolicy: &constantRetryPolicy{delay: time.Second},
+		RetryPolicy: &asynqpg.ConstantRetryPolicy{Delay: time.Second},
 	})
 
 	err := r.runOnce(context.Background())
+
 	require.NoError(t, err)
-
-	repo.mu.Lock()
-	defer repo.mu.Unlock()
-
-	require.Len(t, repo.retryParams, 2)
-	require.Len(t, repo.failCalls, 1)
 }
 
 func TestRescuer_RunOnce_MultipleBatches(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{
-			{tasks: []repository.StuckTask{
-				{ID: 1, AttemptsLeft: 1, AttemptsElapsed: 0},
-				{ID: 2, AttemptsLeft: 1, AttemptsElapsed: 0},
-			}},
-			{tasks: []repository.StuckTask{
-				{ID: 3, AttemptsLeft: 1, AttemptsElapsed: 0},
-			}},
-		},
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
+		{ID: 1, AttemptsLeft: 1, AttemptsElapsed: 0},
+		{ID: 2, AttemptsLeft: 1, AttemptsElapsed: 0},
+	}, nil).Once()
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
+		{ID: 3, AttemptsLeft: 1, AttemptsElapsed: 0},
+	}, nil).Once()
+
+	repo.EXPECT().RetryTask(mock.Anything, mock.Anything).Return(nil).Times(3)
+
 	r := NewRescuer(repo, RescuerConfig{
-		BatchSize:   2, // batch of 2 – first batch is full, triggers second fetch
-		RetryPolicy: &constantRetryPolicy{delay: time.Second},
+		BatchSize:   2, // batch of 2 -- first batch is full, triggers second fetch
+		RetryPolicy: &asynqpg.ConstantRetryPolicy{Delay: time.Second},
 	})
 
 	err := r.runOnce(context.Background())
+
 	require.NoError(t, err)
-
-	repo.mu.Lock()
-	defer repo.mu.Unlock()
-
-	require.Equal(t, 2, repo.stuckCallCount)
-	require.Len(t, repo.retryParams, 3)
 }
 
 func TestRescuer_RunOnce_GetStuckError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{
-			{tasks: nil, err: errors.New("db error")},
-		},
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return(nil, errors.New("db error")).Once()
 	r := NewRescuer(repo, RescuerConfig{BatchSize: 100})
 
 	err := r.runOnce(context.Background())
+
 	require.Error(t, err)
 }
 
 func TestRescuer_RunOnce_RetryError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{
-			{tasks: []repository.StuckTask{
-				{ID: 1, AttemptsLeft: 1, AttemptsElapsed: 0},
-			}},
-		},
-		retryErr: errors.New("retry failed"),
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
+		{ID: 1, AttemptsLeft: 1, AttemptsElapsed: 0},
+	}, nil).Once()
+	repo.EXPECT().RetryTask(mock.Anything, mock.Anything).Return(errors.New("retry failed")).Once()
+
 	r := NewRescuer(repo, RescuerConfig{
 		BatchSize:   100,
-		RetryPolicy: &constantRetryPolicy{delay: time.Second},
+		RetryPolicy: &asynqpg.ConstantRetryPolicy{Delay: time.Second},
 	})
 
 	err := r.runOnce(context.Background())
+
 	require.Error(t, err)
 }
 
 func TestRescuer_RunOnce_FailError(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{
-			{tasks: []repository.StuckTask{
-				{ID: 1, AttemptsLeft: 0, AttemptsElapsed: 3},
-			}},
-		},
-		failErr: errors.New("fail failed"),
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
+		{ID: 1, AttemptsLeft: 0, AttemptsElapsed: 3},
+	}, nil).Once()
+	repo.EXPECT().FailTasks(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("fail failed")).Once()
+
 	r := NewRescuer(repo, RescuerConfig{BatchSize: 100})
 
 	err := r.runOnce(context.Background())
+
 	require.Error(t, err)
 }
 
 func TestRescuer_RetryPolicy_Applied(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{
-			{tasks: []repository.StuckTask{
-				{ID: 1, AttemptsLeft: 2, AttemptsElapsed: 3},
-			}},
-		},
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
+		{ID: 1, AttemptsLeft: 2, AttemptsElapsed: 3},
+	}, nil).Once()
+
+	var capturedParams repository.RetryTaskParams
+	repo.EXPECT().RetryTask(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, params repository.RetryTaskParams) {
+			capturedParams = params
+		}).
+		Return(nil).Once()
+
 	r := NewRescuer(repo, RescuerConfig{
 		BatchSize:   100,
-		RetryPolicy: &constantRetryPolicy{delay: 10 * time.Second},
+		RetryPolicy: &asynqpg.ConstantRetryPolicy{Delay: 10 * time.Second},
 	})
 
 	before := time.Now()
 	err := r.runOnce(context.Background())
+
 	require.NoError(t, err)
-
-	repo.mu.Lock()
-	defer repo.mu.Unlock()
-
-	require.Len(t, repo.retryParams, 1)
 
 	// BlockedTill should be approximately now + 10 seconds
 	expectedBlockedTill := before.Add(10 * time.Second)
-	require.WithinDuration(t, expectedBlockedTill, repo.retryParams[0].BlockedTill, time.Second)
+	require.WithinDuration(t, expectedBlockedTill, capturedParams.BlockedTill, time.Second)
 }
 
 func TestRescuer_StartStop(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{{tasks: nil}},
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	r := NewRescuer(repo, RescuerConfig{Interval: 50 * time.Millisecond})
 
 	require.NoError(t, r.Start(context.Background()))
@@ -534,9 +422,8 @@ func TestRescuer_StartStop(t *testing.T) {
 func TestRescuer_Start_Idempotent(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{
-		stuckResults: []stuckResult{{tasks: nil}},
-	}
+	repo := mocks.NewRescuerRepo(t)
+	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	r := NewRescuer(repo, RescuerConfig{Interval: time.Hour})
 
 	require.NoError(t, r.Start(context.Background()))
@@ -548,8 +435,9 @@ func TestRescuer_Start_Idempotent(t *testing.T) {
 func TestRescuer_Stop_NotStarted(t *testing.T) {
 	t.Parallel()
 
-	repo := &mockRescuerRepo{}
+	repo := mocks.NewRescuerRepo(t)
 	r := NewRescuer(repo, RescuerConfig{})
+
 	// Should not panic
 	r.Stop()
 }
@@ -564,8 +452,22 @@ func TestMaintainer_NewMaintainer_NilLogger(t *testing.T) {
 func TestMaintainer_Start_StartsAllServices(t *testing.T) {
 	t.Parallel()
 
-	svc1 := &mockService{name: "svc1"}
-	svc2 := &mockService{name: "svc2"}
+	var started1, started2 atomic.Bool
+
+	svc1 := mocks.NewService(t)
+	svc1.EXPECT().Name().Return("svc1").Maybe()
+	svc1.EXPECT().Start(mock.Anything).Run(func(_ context.Context) {
+		started1.Store(true)
+	}).Return(nil).Maybe()
+	svc1.EXPECT().Stop().Maybe()
+
+	svc2 := mocks.NewService(t)
+	svc2.EXPECT().Name().Return("svc2").Maybe()
+	svc2.EXPECT().Start(mock.Anything).Run(func(_ context.Context) {
+		started2.Store(true)
+	}).Return(nil).Maybe()
+	svc2.EXPECT().Stop().Maybe()
+
 	m := NewMaintainer(nil, svc1, svc2)
 
 	require.NoError(t, m.Start(context.Background()))
@@ -574,15 +476,29 @@ func TestMaintainer_Start_StartsAllServices(t *testing.T) {
 	// Wait for goroutines to start services
 	time.Sleep(50 * time.Millisecond)
 
-	require.True(t, svc1.started.Load())
-	require.True(t, svc2.started.Load())
+	require.True(t, started1.Load())
+	require.True(t, started2.Load())
 }
 
 func TestMaintainer_Stop_StopsAllServices(t *testing.T) {
 	t.Parallel()
 
-	svc1 := &mockService{name: "svc1"}
-	svc2 := &mockService{name: "svc2"}
+	var stopped1, stopped2 atomic.Bool
+
+	svc1 := mocks.NewService(t)
+	svc1.EXPECT().Name().Return("svc1").Maybe()
+	svc1.EXPECT().Start(mock.Anything).Return(nil).Maybe()
+	svc1.EXPECT().Stop().Run(func() {
+		stopped1.Store(true)
+	}).Maybe()
+
+	svc2 := mocks.NewService(t)
+	svc2.EXPECT().Name().Return("svc2").Maybe()
+	svc2.EXPECT().Start(mock.Anything).Return(nil).Maybe()
+	svc2.EXPECT().Stop().Run(func() {
+		stopped2.Store(true)
+	}).Maybe()
+
 	m := NewMaintainer(nil, svc1, svc2)
 
 	require.NoError(t, m.Start(context.Background()))
@@ -590,14 +506,18 @@ func TestMaintainer_Stop_StopsAllServices(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	m.Stop()
 
-	require.True(t, svc1.stopped.Load())
-	require.True(t, svc2.stopped.Load())
+	require.True(t, stopped1.Load())
+	require.True(t, stopped2.Load())
 }
 
 func TestMaintainer_Start_Idempotent(t *testing.T) {
 	t.Parallel()
 
-	svc := &mockService{name: "svc"}
+	svc := mocks.NewService(t)
+	svc.EXPECT().Name().Return("svc").Maybe()
+	svc.EXPECT().Start(mock.Anything).Return(nil).Maybe()
+	svc.EXPECT().Stop().Maybe()
+
 	m := NewMaintainer(nil, svc)
 
 	require.NoError(t, m.Start(context.Background()))
@@ -617,7 +537,12 @@ func TestMaintainer_Stop_NotStarted(t *testing.T) {
 func TestMaintainer_IsStarted(t *testing.T) {
 	t.Parallel()
 
-	m := NewMaintainer(nil, &mockService{name: "svc"})
+	svc := mocks.NewService(t)
+	svc.EXPECT().Name().Return("svc").Maybe()
+	svc.EXPECT().Start(mock.Anything).Return(nil).Maybe()
+	svc.EXPECT().Stop().Maybe()
+
+	m := NewMaintainer(nil, svc)
 
 	require.False(t, m.IsStarted())
 
@@ -633,8 +558,22 @@ func TestMaintainer_IsStarted(t *testing.T) {
 func TestMaintainer_ServiceStartError(t *testing.T) {
 	t.Parallel()
 
-	svc1 := &mockService{name: "failing", startErr: errors.New("start failed")}
-	svc2 := &mockService{name: "working"}
+	var started1, started2 atomic.Bool
+
+	svc1 := mocks.NewService(t)
+	svc1.EXPECT().Name().Return("failing").Maybe()
+	svc1.EXPECT().Start(mock.Anything).Run(func(_ context.Context) {
+		started1.Store(true)
+	}).Return(errors.New("start failed")).Maybe()
+	svc1.EXPECT().Stop().Maybe()
+
+	svc2 := mocks.NewService(t)
+	svc2.EXPECT().Name().Return("working").Maybe()
+	svc2.EXPECT().Start(mock.Anything).Run(func(_ context.Context) {
+		started2.Store(true)
+	}).Return(nil).Maybe()
+	svc2.EXPECT().Stop().Maybe()
+
 	m := NewMaintainer(nil, svc1, svc2)
 
 	require.NoError(t, m.Start(context.Background()))
@@ -643,8 +582,8 @@ func TestMaintainer_ServiceStartError(t *testing.T) {
 	m.Stop()
 
 	// Both services should have been attempted
-	require.True(t, svc1.started.Load())
-	require.True(t, svc2.started.Load())
+	require.True(t, started1.Load())
+	require.True(t, started2.Load())
 }
 
 func TestMaintainer_NoServices(t *testing.T) {

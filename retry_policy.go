@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+//go:generate go tool mockery --case underscore --with-expecter --name RetryPolicy
+
 // RetryPolicy determines when a failed task should be retried.
 type RetryPolicy interface {
 	// NextRetry returns the duration to wait before the next retry attempt.

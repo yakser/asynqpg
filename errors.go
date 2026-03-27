@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+//go:generate go tool mockery --case underscore --with-expecter --name ErrorHandler
+
 // ErrorHandler is called when a task fails permanently (exhausted all retries)
 // or encounters an unrecoverable error (ErrSkipRetry, panic).
 // Implementations can use this for alerting, dead letter queue routing,

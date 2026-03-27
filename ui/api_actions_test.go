@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/yakser/asynqpg/client"
+	"github.com/yakser/asynqpg/ui/mocks"
 )
 
 func TestWriteClientError(t *testing.T) {
@@ -67,7 +68,7 @@ func TestWriteClientError(t *testing.T) {
 func TestHandleRetryTask_InvalidID(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHandler(HandlerOpts{Pool: &mockPool{}})
+	h, err := NewHandler(HandlerOpts{Pool: mocks.NewPool(t)})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks/abc/retry", nil)
@@ -85,7 +86,7 @@ func TestHandleRetryTask_InvalidID(t *testing.T) {
 func TestHandleCancelTask_InvalidID(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHandler(HandlerOpts{Pool: &mockPool{}})
+	h, err := NewHandler(HandlerOpts{Pool: mocks.NewPool(t)})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks/0/cancel", nil)
@@ -99,7 +100,7 @@ func TestHandleCancelTask_InvalidID(t *testing.T) {
 func TestHandleDeleteTask_InvalidID(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHandler(HandlerOpts{Pool: &mockPool{}})
+	h, err := NewHandler(HandlerOpts{Pool: mocks.NewPool(t)})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/notanumber", nil)
@@ -113,7 +114,7 @@ func TestHandleDeleteTask_InvalidID(t *testing.T) {
 func TestHandleBulkRetry_InvalidBody(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHandler(HandlerOpts{Pool: &mockPool{}})
+	h, err := NewHandler(HandlerOpts{Pool: mocks.NewPool(t)})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks/bulk/retry", strings.NewReader("{invalid"))
@@ -133,7 +134,7 @@ func TestHandleBulkRetry_InvalidBody(t *testing.T) {
 func TestHandleBulkDelete_InvalidBody(t *testing.T) {
 	t.Parallel()
 
-	h, err := NewHandler(HandlerOpts{Pool: &mockPool{}})
+	h, err := NewHandler(HandlerOpts{Pool: mocks.NewPool(t)})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks/bulk/delete", strings.NewReader("not json"))

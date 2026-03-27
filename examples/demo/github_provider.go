@@ -9,7 +9,7 @@ import (
 	"golang.org/x/oauth2"
 	oauthgithub "golang.org/x/oauth2/github"
 
-	"github.com/yakser/asynqpg/ui"
+	"github.com/yakser/asynqpg/ui/uiauth"
 )
 
 // GitHubAuthProvider implements ui.AuthProvider for GitHub OAuth.
@@ -44,7 +44,7 @@ func (g *GitHubAuthProvider) BeginAuth(w http.ResponseWriter, r *http.Request, c
 }
 
 // CompleteAuth exchanges the authorization code for a token and fetches user info.
-func (g *GitHubAuthProvider) CompleteAuth(_ http.ResponseWriter, r *http.Request) (*ui.User, error) {
+func (g *GitHubAuthProvider) CompleteAuth(_ http.ResponseWriter, r *http.Request) (*uiauth.User, error) {
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		return nil, fmt.Errorf("missing authorization code")
@@ -61,7 +61,7 @@ func (g *GitHubAuthProvider) CompleteAuth(_ http.ResponseWriter, r *http.Request
 		return nil, fmt.Errorf("fetch GitHub user: %w", err)
 	}
 
-	return &ui.User{
+	return &uiauth.User{
 		ID:        fmt.Sprintf("%d", ghUser.ID),
 		Provider:  "github",
 		Name:      ghUser.Name,

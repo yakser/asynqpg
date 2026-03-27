@@ -35,6 +35,7 @@ type Config struct {
 	Logger         *slog.Logger
 }
 
+//go:generate go tool mockery --case underscore --with-expecter --exported --name completerRepo
 type completerRepo interface {
 	CompleteTasksMany(ctx context.Context, params repository.CompleteTasksManyParams) (int, error)
 	FailTasksMany(ctx context.Context, params repository.FailTasksManyParams) (int, error)

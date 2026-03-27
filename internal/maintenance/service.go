@@ -2,6 +2,8 @@ package maintenance
 
 import "context"
 
+//go:generate go tool mockery --case underscore --with-expecter --name Service
+
 // Service represents a background maintenance service.
 type Service interface {
 	// Start starts the service. It should return immediately after starting

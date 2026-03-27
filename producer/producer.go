@@ -18,6 +18,7 @@ import (
 	"github.com/yakser/asynqpg/internal/repository"
 )
 
+//go:generate go tool mockery --case underscore --with-expecter --exported --name producerRepo
 type producerRepo interface {
 	PushTask(ctx context.Context, task *repository.PushTaskParams) (repository.PushTaskResult, error)
 	PushTaskWithTx(ctx context.Context, tx asynqpg.Tx, task *repository.PushTaskParams) (repository.PushTaskResult, error)

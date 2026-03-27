@@ -10,41 +10,32 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/yakser/asynqpg/ui/mocks"
+	"github.com/yakser/asynqpg/ui/uiauth"
 )
 
-// mockAuthProvider implements AuthProvider for testing.
-type mockAuthProvider struct {
-	id          string
-	displayName string
-	iconURL     string
-	beginFn     func(w http.ResponseWriter, r *http.Request, callbackURL string, state string)
-	completeFn  func(w http.ResponseWriter, r *http.Request) (*User, error)
-}
-
-func (m *mockAuthProvider) ID() string          { return m.id }
-func (m *mockAuthProvider) DisplayName() string { return m.displayName }
-func (m *mockAuthProvider) IconURL() string     { return m.iconURL }
-
-func (m *mockAuthProvider) BeginAuth(w http.ResponseWriter, r *http.Request, callbackURL string, state string) {
-	if m.beginFn != nil {
-		m.beginFn(w, r, callbackURL, state)
-		return
-	}
-	http.Redirect(w, r, "https://provider.example.com/auth?state="+state, http.StatusFound)
-}
-
-func (m *mockAuthProvider) CompleteAuth(w http.ResponseWriter, r *http.Request) (*User, error) {
-	if m.completeFn != nil {
-		return m.completeFn(w, r)
-	}
-	return &User{ID: "123", Provider: m.id, Name: "Test User", AvatarURL: "https://example.com/avatar.png", Email: "test@example.com"}, nil
+func newTestAuthProvider(t *testing.T, id, displayName, iconURL string) *mocks.AuthProvider {
+	t.Helper()
+	p := mocks.NewAuthProvider(t)
+	p.EXPECT().ID().Return(id).Maybe()
+	p.EXPECT().DisplayName().Return(displayName).Maybe()
+	p.EXPECT().IconURL().Return(iconURL).Maybe()
+	p.EXPECT().BeginAuth(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(w http.ResponseWriter, r *http.Request, callbackURL string, state string) {
+			http.Redirect(w, r, "https://provider.example.com/auth?state="+state, http.StatusFound)
+		}).Maybe()
+	p.EXPECT().CompleteAuth(mock.Anything, mock.Anything).
+		Return(&uiauth.User{ID: "123", Provider: id, Name: "Test User", AvatarURL: "https://example.com/avatar.png", Email: "test@example.com"}, nil).Maybe()
+	return p
 }
 
 func newTestHandlerWithOAuth(t *testing.T, providers ...AuthProvider) http.Handler {
 	t.Helper()
 	h, err := NewHandler(HandlerOpts{
-		Pool:          &mockPool{},
+		Pool:          mocks.NewPool(t),
 		AuthProviders: providers,
 	})
 	require.NoError(t, err)
@@ -55,8 +46,8 @@ func TestHandleAuthProviders_ReturnsList(t *testing.T) {
 	t.Parallel()
 
 	h := newTestHandlerWithOAuth(t,
-		&mockAuthProvider{id: "github", displayName: "GitHub", iconURL: "https://github.com/icon.png"},
-		&mockAuthProvider{id: "google", displayName: "Google"},
+		newTestAuthProvider(t, "github", "GitHub", "https://github.com/icon.png"),
+		newTestAuthProvider(t, "google", "Google", ""),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/providers", nil)
@@ -109,7 +100,7 @@ func TestHandleAuthMe_Authenticated(t *testing.T) {
 	t.Parallel()
 
 	hObj := &handler{}
-	user := &User{ID: "42", Provider: "github", Name: "Alice", AvatarURL: "https://example.com/a.png", Email: "alice@example.com"}
+	user := &uiauth.User{ID: "42", Provider: "github", Name: "Alice", AvatarURL: "https://example.com/a.png", Email: "alice@example.com"}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 	req = req.WithContext(withUser(req.Context(), user))
@@ -145,14 +136,17 @@ func TestHandleAuthLogin_ValidProvider(t *testing.T) {
 	t.Parallel()
 
 	var capturedCallbackURL string
-	provider := &mockAuthProvider{
-		id:          "github",
-		displayName: "GitHub",
-		beginFn: func(w http.ResponseWriter, r *http.Request, callbackURL string, state string) {
+	provider := mocks.NewAuthProvider(t)
+	provider.EXPECT().ID().Return("github").Maybe()
+	provider.EXPECT().DisplayName().Return("GitHub").Maybe()
+	provider.EXPECT().IconURL().Return("").Maybe()
+	provider.EXPECT().BeginAuth(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(w http.ResponseWriter, r *http.Request, callbackURL string, state string) {
 			capturedCallbackURL = callbackURL
 			http.Redirect(w, r, "https://github.com/login/oauth/authorize?state="+state, http.StatusFound)
-		},
-	}
+		}).Maybe()
+	provider.EXPECT().CompleteAuth(mock.Anything, mock.Anything).
+		Return(&uiauth.User{ID: "123", Provider: "github", Name: "Test User"}, nil).Maybe()
 
 	h := newTestHandlerWithOAuth(t, provider)
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/login/github", nil)
@@ -181,7 +175,7 @@ func TestHandleAuthLogin_ValidProvider(t *testing.T) {
 func TestHandleAuthLogin_UnknownProvider(t *testing.T) {
 	t.Parallel()
 
-	h := newTestHandlerWithOAuth(t, &mockAuthProvider{id: "github", displayName: "GitHub"})
+	h := newTestHandlerWithOAuth(t, newTestAuthProvider(t, "github", "GitHub", ""))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/login/unknown", nil)
 	rec := httptest.NewRecorder()
@@ -194,13 +188,13 @@ func TestHandleAuthLogin_UnknownProvider(t *testing.T) {
 func TestHandleAuthCallback_Success(t *testing.T) {
 	t.Parallel()
 
-	provider := &mockAuthProvider{
-		id:          "github",
-		displayName: "GitHub",
-		completeFn: func(_ http.ResponseWriter, _ *http.Request) (*User, error) {
-			return &User{ID: "123", Provider: "github", Name: "Alice"}, nil
-		},
-	}
+	provider := mocks.NewAuthProvider(t)
+	provider.EXPECT().ID().Return("github").Maybe()
+	provider.EXPECT().DisplayName().Return("GitHub").Maybe()
+	provider.EXPECT().IconURL().Return("").Maybe()
+	provider.EXPECT().BeginAuth(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
+	provider.EXPECT().CompleteAuth(mock.Anything, mock.Anything).
+		Return(&uiauth.User{ID: "123", Provider: "github", Name: "Alice"}, nil).Maybe()
 
 	store := NewMemorySessionStore()
 	defer store.Close()
@@ -243,7 +237,7 @@ func TestHandleAuthCallback_Success(t *testing.T) {
 func TestHandleAuthCallback_InvalidState(t *testing.T) {
 	t.Parallel()
 
-	provider := &mockAuthProvider{id: "github", displayName: "GitHub"}
+	provider := newTestAuthProvider(t, "github", "GitHub", "")
 	hObj := &handler{
 		opts:   HandlerOpts{AuthProviders: []AuthProvider{provider}, Prefix: "/"},
 		logger: testLogger(),
@@ -264,7 +258,7 @@ func TestHandleAuthCallback_InvalidState(t *testing.T) {
 func TestHandleAuthCallback_MissingStateCookie(t *testing.T) {
 	t.Parallel()
 
-	provider := &mockAuthProvider{id: "github", displayName: "GitHub"}
+	provider := newTestAuthProvider(t, "github", "GitHub", "")
 	hObj := &handler{
 		opts:   HandlerOpts{AuthProviders: []AuthProvider{provider}, Prefix: "/"},
 		logger: testLogger(),
@@ -283,13 +277,13 @@ func TestHandleAuthCallback_MissingStateCookie(t *testing.T) {
 func TestHandleAuthCallback_ProviderError(t *testing.T) {
 	t.Parallel()
 
-	provider := &mockAuthProvider{
-		id:          "github",
-		displayName: "GitHub",
-		completeFn: func(_ http.ResponseWriter, _ *http.Request) (*User, error) {
-			return nil, errors.New("access denied by user")
-		},
-	}
+	provider := mocks.NewAuthProvider(t)
+	provider.EXPECT().ID().Return("github").Maybe()
+	provider.EXPECT().DisplayName().Return("GitHub").Maybe()
+	provider.EXPECT().IconURL().Return("").Maybe()
+	provider.EXPECT().BeginAuth(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
+	provider.EXPECT().CompleteAuth(mock.Anything, mock.Anything).
+		Return(nil, errors.New("access denied by user")).Maybe()
 
 	hObj := &handler{
 		opts:   HandlerOpts{AuthProviders: []AuthProvider{provider}, Prefix: "/"},
@@ -311,7 +305,7 @@ func TestHandleAuthCallback_ProviderError(t *testing.T) {
 func TestHandleAuthCallback_UnknownProvider(t *testing.T) {
 	t.Parallel()
 
-	h := newTestHandlerWithOAuth(t, &mockAuthProvider{id: "github", displayName: "GitHub"})
+	h := newTestHandlerWithOAuth(t, newTestAuthProvider(t, "github", "GitHub", ""))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/callback/unknown?code=abc&state=x", nil)
 	rec := httptest.NewRecorder()
@@ -328,9 +322,9 @@ func TestHandleAuthLogout_Success(t *testing.T) {
 	defer store.Close()
 
 	ctx := t.Context()
-	sess := &Session{
+	sess := &uiauth.Session{
 		Token:     "logout-token",
-		User:      User{ID: "1", Name: "Alice"},
+		User:      uiauth.User{ID: "1", Name: "Alice"},
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
@@ -352,7 +346,7 @@ func TestHandleAuthLogout_Success(t *testing.T) {
 
 	// Session should be deleted.
 	_, err := store.Get(ctx, "logout-token")
-	assert.ErrorIs(t, err, ErrSessionNotFound)
+	assert.ErrorIs(t, err, uiauth.ErrSessionNotFound)
 
 	// Cookie should be cleared.
 	var cleared *http.Cookie
@@ -383,7 +377,7 @@ func TestHandleAuthLogout_NoCookie(t *testing.T) {
 
 	hObj.handleAuthLogout(rec, req)
 
-	// Still returns 200 – logout is a no-op if no session.
+	// Still returns 200 -- logout is a no-op if no session.
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 

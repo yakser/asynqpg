@@ -10,6 +10,9 @@ import (
 
 const defaultSessionMaxAge = 24 * time.Hour
 
+//go:generate go tool mockery --case underscore --with-expecter --exported --name pool
+type pool = asynqpg.Pool
+
 // HandlerOpts configures the UI handler.
 type HandlerOpts struct {
 	// Pool is a database connection pool (required).

@@ -60,6 +60,8 @@ func (c *ElectorConfig) setDefaults() {
 	}
 }
 
+//go:generate go tool mockery --case underscore --with-expecter --exported --name dbExecer
+
 // dbExecer is the minimal interface the elector needs from a database pool.
 type dbExecer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
