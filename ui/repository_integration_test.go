@@ -612,9 +612,7 @@ func TestBulkRetryFailed_ConcurrentAccess(t *testing.T) {
 	var mu sync.Mutex
 
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			filterType := "bulk-retry-concurrent"
 			affected, err := uiRepo.BulkRetryFailed(ctx, &filterType)
 			require.NoError(t, err)
@@ -622,7 +620,7 @@ func TestBulkRetryFailed_ConcurrentAccess(t *testing.T) {
 			mu.Lock()
 			totalAffected += affected
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -756,9 +754,7 @@ func TestBulkDeleteFailed_ConcurrentAccess(t *testing.T) {
 	var mu sync.Mutex
 
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			filterType := "bulk-del-concurrent"
 			affected, err := uiRepo.BulkDeleteFailed(ctx, &filterType)
 			require.NoError(t, err)
@@ -766,7 +762,7 @@ func TestBulkDeleteFailed_ConcurrentAccess(t *testing.T) {
 			mu.Lock()
 			totalAffected += affected
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()

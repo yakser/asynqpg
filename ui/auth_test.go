@@ -110,10 +110,8 @@ func TestMemorySessionStore_ConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := range 100 {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			token := "token-" + time.Now().Format("150405.000000") + "-" + string(rune('A'+idx%26))
+		wg.Go(func() {
+			token := "token-" + time.Now().Format("150405.000000") + "-" + string(rune('A'+i%26))
 			sess := &uiauth.Session{
 				Token:     token,
 				User:      uiauth.User{ID: "u"},
@@ -123,7 +121,7 @@ func TestMemorySessionStore_ConcurrentAccess(t *testing.T) {
 			_ = store.Save(ctx, sess)
 			_, _ = store.Get(ctx, token)
 			_ = store.Delete(ctx, token)
-		}(i)
+		})
 	}
 
 	wg.Wait()

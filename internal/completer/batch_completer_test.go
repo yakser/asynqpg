@@ -369,17 +369,15 @@ func TestUnit_Backpressure(t *testing.T) {
 
 	var blocked atomic.Bool
 	var wg sync.WaitGroup
-	wg.Add(1)
 
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := range 10 {
 			if i >= 5 {
 				blocked.Store(true)
 			}
 			_ = bc.Complete(int64(i))
 		}
-	}()
+	})
 
 	// Should be blocked after 5 items
 	require.Eventually(t, blocked.Load, 2*time.Second, 10*time.Millisecond, "expected goroutine to reach backpressure point")
@@ -482,11 +480,9 @@ func TestUnit_ConcurrentOperations(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := range 20 {
-		wg.Add(1)
-		go func(id int64) {
-			defer wg.Done()
-			_ = bc.Complete(id)
-		}(int64(i))
+		wg.Go(func() {
+			_ = bc.Complete(int64(i))
+		})
 	}
 
 	wg.Wait()
