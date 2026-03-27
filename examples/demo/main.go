@@ -270,7 +270,7 @@ func seedTasks(ctx context.Context, p *producer.Producer, logger *slog.Logger) i
 	}
 
 	// Individual: 20 report tasks.
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		task := asynqpg.NewTask("report.generate",
 			[]byte(fmt.Sprintf(`{"report_id":%d,"type":"monthly"}`, i)),
 			asynqpg.WithMaxRetry(2),

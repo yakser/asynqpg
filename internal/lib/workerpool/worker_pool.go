@@ -63,7 +63,7 @@ func (p *WorkerPool) Resize(n int) {
 
 	if n > p.workers {
 		diff := n - p.workers
-		for i := 0; i < diff; i++ {
+		for range diff {
 			stopCh := make(chan struct{})
 			p.stopChans = append(p.stopChans, stopCh)
 			p.startWorker(stopCh)
@@ -74,7 +74,7 @@ func (p *WorkerPool) Resize(n int) {
 
 	if n < p.workers {
 		diff := p.workers - n
-		for i := 0; i < diff; i++ {
+		for range diff {
 			lastIdx := len(p.stopChans) - 1
 			close(p.stopChans[lastIdx])
 			p.stopChans = p.stopChans[:lastIdx]
