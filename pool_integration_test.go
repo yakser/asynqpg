@@ -122,7 +122,7 @@ func TestIndependentPools_ProducerAndClient(t *testing.T) {
 
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		task := asynqpg.NewTask("multi-pool-test", []byte(`{"i":1}`), asynqpg.WithMaxRetry(1))
 		_, err = p.Enqueue(ctx, task)
 		require.NoError(t, err)

@@ -269,7 +269,7 @@ func TestGracefulShutdown(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             "test-task",
 				Payload:          []byte("{}"),
@@ -317,7 +317,7 @@ func TestGracefulShutdown(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             "test-task",
 				Payload:          []byte("{}"),
@@ -401,7 +401,7 @@ func TestTaskProcessing(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             taskType,
 				Payload:          []byte("{}"),
@@ -526,7 +526,7 @@ func TestConcurrency(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 6; i++ {
+		for range 6 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             taskType,
 				Payload:          []byte("{}"),
@@ -595,7 +595,7 @@ func TestConcurrency(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             emailType,
 				Payload:          []byte("{}"),

@@ -109,7 +109,7 @@ func TestMemorySessionStore_ConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
 	var wg sync.WaitGroup
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -171,7 +171,7 @@ func TestGenerateSessionToken_Unique(t *testing.T) {
 	t.Parallel()
 
 	seen := make(map[string]struct{}, 1000)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		token, err := generateSessionToken()
 		require.NoError(t, err)
 		_, ok := seen[token]

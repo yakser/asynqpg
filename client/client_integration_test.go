@@ -179,7 +179,7 @@ func TestListTasks_Pagination(t *testing.T) {
 	c, repo := setupClient(t)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		createPendingTask(t, repo, "list-page-test")
 	}
 

@@ -373,7 +373,7 @@ func TestUnit_Backpressure(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			if i >= 5 {
 				blocked.Store(true)
 			}
@@ -481,7 +481,7 @@ func TestUnit_ConcurrentOperations(t *testing.T) {
 	require.NoError(t, bc.Start(context.Background()))
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(id int64) {
 			defer wg.Done()

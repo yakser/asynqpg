@@ -286,7 +286,7 @@ func TestListTasks_Pagination(t *testing.T) {
 	uiRepo, db := setupRepo(t)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		insertPendingTask(t, db, "list-page", []byte(`{}`))
 	}
 
@@ -602,7 +602,7 @@ func TestBulkRetryFailed_ConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
 
 	// Create 20 failed tasks
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		insertFailedTask(t, db, "bulk-retry-concurrent")
 	}
 
@@ -611,7 +611,7 @@ func TestBulkRetryFailed_ConcurrentAccess(t *testing.T) {
 	var totalAffected int64
 	var mu sync.Mutex
 
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -746,7 +746,7 @@ func TestBulkDeleteFailed_ConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
 
 	// Create 20 failed tasks
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		insertFailedTask(t, db, "bulk-del-concurrent")
 	}
 
@@ -755,7 +755,7 @@ func TestBulkDeleteFailed_ConcurrentAccess(t *testing.T) {
 	var totalAffected int64
 	var mu sync.Mutex
 
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

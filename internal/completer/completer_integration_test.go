@@ -38,7 +38,7 @@ func createAndFetchTasks(t *testing.T, repo *repository.Repository, count int, t
 	ctx := context.Background()
 
 	tasks := make([]repository.PushTaskParams, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		tasks[i] = repository.PushTaskParams{
 			Type:         taskType,
 			Payload:      []byte(`{}`),

@@ -20,7 +20,7 @@ func TestWorkerPoolExecutesAllTasks(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(n)
 
-	for i := 0; i < n; i++ {
+	for range n {
 		err := pool.Submit(func() {
 			atomic.AddInt64(&done, 1)
 			wg.Done()
@@ -77,7 +77,7 @@ func TestWorkerPoolResizeIncrease(t *testing.T) {
 		wg.Done()
 	}
 
-	for i := 0; i < tasksCount; i++ {
+	for i := range tasksCount {
 		err := pool.Submit(work)
 		require.NoError(t, err)
 		if i == 5 {
@@ -109,7 +109,7 @@ func TestWorkerPoolResizeDecreaseNoDeadlock(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(tasksCount)
 
-	for i := 0; i < tasksCount; i++ {
+	for i := range tasksCount {
 		err := pool.Submit(func() {
 			time.Sleep(5 * time.Millisecond)
 			wg.Done()
@@ -180,7 +180,7 @@ func TestWorkerPoolFreeWorkers(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		go func() {
 			err := pool.Submit(func() {
 				started <- struct{}{}
@@ -192,7 +192,7 @@ func TestWorkerPoolFreeWorkers(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		select {
 		case <-started:
 		case <-time.After(500 * time.Millisecond):
