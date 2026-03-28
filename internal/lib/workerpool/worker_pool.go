@@ -16,7 +16,7 @@ type WorkerPool struct {
 	wg        sync.WaitGroup
 	closed    bool
 
-	busy int64
+	busy atomic.Int64
 }
 
 func NewWorkerPool(workerCount int) *WorkerPool {
@@ -29,9 +29,7 @@ func NewWorkerPool(workerCount int) *WorkerPool {
 }
 
 func (p *WorkerPool) startWorker(stopCh <-chan struct{}) {
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		for {
 			select {
 			case <-stopCh:
@@ -41,13 +39,13 @@ func (p *WorkerPool) startWorker(stopCh <-chan struct{}) {
 					return
 				}
 				if task != nil {
-					atomic.AddInt64(&p.busy, 1)
+					p.busy.Add(1)
 					task()
-					atomic.AddInt64(&p.busy, -1)
+					p.busy.Add(-1)
 				}
 			}
 		}
-	}()
+	})
 }
 
 func (p *WorkerPool) Resize(n int) {
@@ -63,7 +61,7 @@ func (p *WorkerPool) Resize(n int) {
 
 	if n > p.workers {
 		diff := n - p.workers
-		for i := 0; i < diff; i++ {
+		for range diff {
 			stopCh := make(chan struct{})
 			p.stopChans = append(p.stopChans, stopCh)
 			p.startWorker(stopCh)
@@ -74,7 +72,7 @@ func (p *WorkerPool) Resize(n int) {
 
 	if n < p.workers {
 		diff := p.workers - n
-		for i := 0; i < diff; i++ {
+		for range diff {
 			lastIdx := len(p.stopChans) - 1
 			close(p.stopChans[lastIdx])
 			p.stopChans = p.stopChans[:lastIdx]
@@ -118,7 +116,7 @@ func (p *WorkerPool) FreeWorkers() int {
 	workers := p.workers
 	p.mu.Unlock()
 
-	busy := int(atomic.LoadInt64(&p.busy))
+	busy := int(p.busy.Load())
 	if busy <= 0 {
 		return workers
 	}

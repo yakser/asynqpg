@@ -269,7 +269,7 @@ func TestGracefulShutdown(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             "test-task",
 				Payload:          []byte("{}"),
@@ -281,11 +281,11 @@ func TestGracefulShutdown(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		var callCount int32
+		var callCount atomic.Int32
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&callCount, 1)
+				callCount.Add(1)
 				return nil
 			}).Maybe()
 		err = c.RegisterTaskHandler("test-task", handler)
@@ -295,7 +295,7 @@ func TestGracefulShutdown(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&callCount) == 10
+			return callCount.Load() == 10
 		}, 1*time.Second, 50*time.Millisecond, "should start 10 tasks")
 
 		start := time.Now()
@@ -317,7 +317,7 @@ func TestGracefulShutdown(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             "test-task",
 				Payload:          []byte("{}"),
@@ -375,12 +375,12 @@ func TestTaskProcessing(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "success_task_" + t.Name()
-		var processedCount int32
+		var processedCount atomic.Int32
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&processedCount, 1)
+				processedCount.Add(1)
 				return nil
 			}).Maybe()
 
@@ -401,7 +401,7 @@ func TestTaskProcessing(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             taskType,
 				Payload:          []byte("{}"),
@@ -417,7 +417,7 @@ func TestTaskProcessing(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processedCount) == 2
+			return processedCount.Load() == 2
 		}, 1*time.Second, 50*time.Millisecond, "should process 2 tasks")
 
 		err = c.Stop()
@@ -431,11 +431,11 @@ func TestTaskProcessing(t *testing.T) {
 
 		taskType := "error_task_" + t.Name()
 		expectedErr := errors.New("processing error")
-		var callCount int32
+		var callCount atomic.Int32
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&callCount, 1)
+				callCount.Add(1)
 				return expectedErr
 			}).Maybe()
 
@@ -470,7 +470,7 @@ func TestTaskProcessing(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&callCount) == 1
+			return callCount.Load() == 1
 		}, 1*time.Second, 50*time.Millisecond, "handler should be called once")
 
 		err = c.Stop()
@@ -487,19 +487,19 @@ func TestConcurrency(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "concurrent_task_" + t.Name()
-		var concurrent int32
-		var maxConcurrent int32
-		var processed int32
+		var concurrent atomic.Int32
+		var maxConcurrent atomic.Int32
+		var processed atomic.Int32
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				curr := atomic.AddInt32(&concurrent, 1)
-				defer atomic.AddInt32(&concurrent, -1)
-				defer atomic.AddInt32(&processed, 1)
+				curr := concurrent.Add(1)
+				defer concurrent.Add(-1)
+				defer processed.Add(1)
 				for {
-					maxConc := atomic.LoadInt32(&maxConcurrent)
-					if curr <= maxConc || atomic.CompareAndSwapInt32(&maxConcurrent, maxConc, curr) {
+					maxConc := maxConcurrent.Load()
+					if curr <= maxConc || maxConcurrent.CompareAndSwap(maxConc, curr) {
 						break
 					}
 				}
@@ -526,7 +526,7 @@ func TestConcurrency(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 6; i++ {
+		for range 6 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             taskType,
 				Payload:          []byte("{}"),
@@ -542,13 +542,13 @@ func TestConcurrency(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) >= 3
+			return processed.Load() >= 3
 		}, 1*time.Second, 100*time.Millisecond, "should process at least 3 tasks")
 
 		err = c.Stop()
 		require.NoError(t, err)
 
-		maxConcurrentTasks := atomic.LoadInt32(&maxConcurrent)
+		maxConcurrentTasks := maxConcurrent.Load()
 		assert.Equal(t, maxConcurrentTasks, int32(3), "should process tasks concurrently")
 	})
 
@@ -559,19 +559,19 @@ func TestConcurrency(t *testing.T) {
 
 		emailType := "email_multi_" + t.Name()
 		smsType := "sms_multi_" + t.Name()
-		var emailCount, smsCount int32
+		var emailCount, smsCount atomic.Int32
 
 		emailHandler := mocks.NewTaskHandler(t)
 		emailHandler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&emailCount, 1)
+				emailCount.Add(1)
 				return nil
 			}).Maybe()
 
 		smsHandler := mocks.NewTaskHandler(t)
 		smsHandler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&smsCount, 1)
+				smsCount.Add(1)
 				return nil
 			}).Maybe()
 
@@ -595,7 +595,7 @@ func TestConcurrency(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			_, err = producer.Enqueue(t.Context(), &asynqpg.Task{
 				Type:             emailType,
 				Payload:          []byte("{}"),
@@ -620,8 +620,8 @@ func TestConcurrency(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			emails := atomic.LoadInt32(&emailCount)
-			sms := atomic.LoadInt32(&smsCount)
+			emails := emailCount.Load()
+			sms := smsCount.Load()
 			return emails > 0 && sms > 0
 		}, 1*time.Second, 100*time.Millisecond, "should process tasks of both types")
 
@@ -639,7 +639,7 @@ func TestTaskLockDuringExecution(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "lock_test_" + t.Name()
-		var consumer1Calls, consumer2Calls int32
+		var consumer1Calls, consumer2Calls atomic.Int32
 		taskStarted := make(chan struct{})
 		taskCanFinish := make(chan struct{})
 
@@ -647,7 +647,7 @@ func TestTaskLockDuringExecution(t *testing.T) {
 		handler1 := mocks.NewTaskHandler(t)
 		handler1.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&consumer1Calls, 1)
+				consumer1Calls.Add(1)
 				close(taskStarted)
 				<-taskCanFinish
 				return nil
@@ -657,7 +657,7 @@ func TestTaskLockDuringExecution(t *testing.T) {
 		handler2 := mocks.NewTaskHandler(t)
 		handler2.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&consumer2Calls, 1)
+				consumer2Calls.Add(1)
 				return nil
 			}).Maybe()
 
@@ -738,9 +738,9 @@ func TestTaskLockDuringExecution(t *testing.T) {
 
 		// Consumer2 should not pick up the locked task
 		require.Never(t, func() bool {
-			return atomic.LoadInt32(&consumer2Calls) > 0
+			return consumer2Calls.Load() > 0
 		}, 100*time.Millisecond, 10*time.Millisecond, "consumer2 should not process the locked task")
-		assert.Equal(t, int32(1), atomic.LoadInt32(&consumer1Calls), "consumer1 should process the task once")
+		assert.Equal(t, int32(1), consumer1Calls.Load(), "consumer1 should process the task once")
 
 		// Release the task
 		close(taskCanFinish)
@@ -749,8 +749,8 @@ func TestTaskLockDuringExecution(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		// Still, only consumer1 should have processed it
-		assert.Equal(t, int32(1), atomic.LoadInt32(&consumer1Calls))
-		assert.Equal(t, int32(0), atomic.LoadInt32(&consumer2Calls))
+		assert.Equal(t, int32(1), consumer1Calls.Load())
+		assert.Equal(t, int32(0), consumer2Calls.Load())
 	})
 
 	t.Run("task becomes available after lock expires", func(t *testing.T) {
@@ -760,14 +760,14 @@ func TestTaskLockDuringExecution(t *testing.T) {
 
 		taskType := "lock_expiry_test_" + t.Name()
 		var consumer1Started, consumer2Started atomic.Bool
-		var taskProcessingCount int32
+		var taskProcessingCount atomic.Int32
 
 		// Shared handler that tracks which consumer picked up the task
 		createHandler := func(consumerName string, isConsumer1 bool) *mocks.TaskHandler {
 			h := mocks.NewTaskHandler(t)
 			h.EXPECT().Handle(mock.Anything, mock.Anything).
 				RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-					count := atomic.AddInt32(&taskProcessingCount, 1)
+					count := taskProcessingCount.Add(1)
 					if isConsumer1 {
 						consumer1Started.Store(true)
 						t.Logf("[%s] Started processing (attempt #%d)", consumerName, count)
@@ -868,7 +868,7 @@ func TestTaskLockDuringExecution(t *testing.T) {
 		// Both consumers should have processed the task
 		assert.True(t, consumer1Started.Load(), "consumer1 should have started")
 		assert.True(t, consumer2Started.Load(), "consumer2 should have started after lock expired")
-		assert.Equal(t, atomic.LoadInt32(&taskProcessingCount), int32(2),
+		assert.Equal(t, taskProcessingCount.Load(), int32(2),
 			"task should be taken twice (by both consumers)")
 		//  msg="fetch ready tasks" consumer=c2 now=2026-01-24 12:15:24.605
 		//  BlockedTill:						    2026-01-24 12:15:23.657684
@@ -956,14 +956,14 @@ func TestTaskLockDuringExecution(t *testing.T) {
 		db := testutils.SetupTestDatabase(t)
 
 		taskType := "lock_duration_test_" + t.Name()
-		var processedCount int32
+		var processedCount atomic.Int32
 		taskStarted := make(chan struct{}, 1)
 		processingDone := make(chan struct{})
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				count := atomic.AddInt32(&processedCount, 1)
+				count := processedCount.Add(1)
 				if count == 1 {
 					select {
 					case taskStarted <- struct{}{}:
@@ -1033,7 +1033,7 @@ func TestTaskLockDuringExecution(t *testing.T) {
 		require.NoError(t, err)
 
 		// Task should be processed exactly once (no re-picking due to proper lock)
-		assert.Equal(t, int32(1), atomic.LoadInt32(&processedCount),
+		assert.Equal(t, int32(1), processedCount.Load(),
 			"task should be processed exactly once with proper lock duration")
 	})
 }
@@ -1056,7 +1056,7 @@ func TestContextUtilities(t *testing.T) {
 			gotIDOk       bool
 			gotRetryOk    bool
 			gotMaxOk      bool
-			processed     int32
+			processed     atomic.Int32
 		)
 
 		handler := mocks.NewTaskHandler(t)
@@ -1065,7 +1065,7 @@ func TestContextUtilities(t *testing.T) {
 				gotID, gotIDOk = asynqpg.GetTaskID(ctx)
 				gotRetryCount, gotRetryOk = asynqpg.GetRetryCount(ctx)
 				gotMaxRetry, gotMaxOk = asynqpg.GetMaxRetry(ctx)
-				atomic.StoreInt32(&processed, 1)
+				processed.Store(1)
 				return nil
 			}).Maybe()
 
@@ -1093,7 +1093,7 @@ func TestContextUtilities(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) == 1
+			return processed.Load() == 1
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed")
 
 		err = c.Stop()
@@ -1121,12 +1121,12 @@ func TestTaskSnooze(t *testing.T) {
 		taskType := "snooze_task_" + t.Name()
 		idempotencyToken := "snooze-token-1"
 		maxRetry := 5
-		var processed int32
+		var processed atomic.Int32
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				count := atomic.AddInt32(&processed, 1)
+				count := processed.Add(1)
 				if count == 1 {
 					return asynqpg.TaskSnooze(100 * time.Millisecond)
 				}
@@ -1161,7 +1161,7 @@ func TestTaskSnooze(t *testing.T) {
 
 		// Handler should be called twice: first returns snooze, second succeeds
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) >= 2
+			return processed.Load() >= 2
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
 		err = c.Stop()
@@ -1184,12 +1184,12 @@ func TestTaskSnooze(t *testing.T) {
 		taskType := "snooze_wrapped_" + t.Name()
 		idempotencyToken := "snooze-wrapped-token-1"
 		maxRetry := 5
-		var processed int32
+		var processed atomic.Int32
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				count := atomic.AddInt32(&processed, 1)
+				count := processed.Add(1)
 				if count == 1 {
 					return fmt.Errorf("not ready yet: %w", asynqpg.TaskSnooze(100*time.Millisecond))
 				}
@@ -1223,7 +1223,7 @@ func TestTaskSnooze(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) >= 2
+			return processed.Load() >= 2
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
 		err = c.Stop()
@@ -1246,12 +1246,12 @@ func TestTaskSnoozeWithError(t *testing.T) {
 		taskType := "snooze_err_task_" + t.Name()
 		idempotencyToken := "snooze-err-token-1"
 		maxRetry := 5
-		var processed int32
+		var processed atomic.Int32
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				count := atomic.AddInt32(&processed, 1)
+				count := processed.Add(1)
 				if count == 1 {
 					return asynqpg.TaskSnoozeWithError(100 * time.Millisecond)
 				}
@@ -1285,7 +1285,7 @@ func TestTaskSnoozeWithError(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) >= 2
+			return processed.Load() >= 2
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
 		err = c.Stop()
@@ -1308,12 +1308,12 @@ func TestTaskSnoozeWithError(t *testing.T) {
 		taskType := "snooze_err_exhaust_" + t.Name()
 		idempotencyToken := "snooze-err-exhaust-token-1"
 		maxRetry := 1
-		var processed int32
+		var processed atomic.Int32
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&processed, 1)
+				processed.Add(1)
 				return asynqpg.TaskSnoozeWithError(100 * time.Millisecond)
 			}).Maybe()
 
@@ -1344,7 +1344,7 @@ func TestTaskSnoozeWithError(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) >= 1
+			return processed.Load() >= 1
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed")
 
 		err = c.Stop()
@@ -1355,7 +1355,7 @@ func TestTaskSnoozeWithError(t *testing.T) {
 		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
 		require.NoError(t, err)
 		assert.Equal(t, "failed", task.Status, "task should be failed when no attempts left")
-		assert.Equal(t, int32(1), atomic.LoadInt32(&processed), "handler should be called exactly once")
+		assert.Equal(t, int32(1), processed.Load(), "handler should be called exactly once")
 	})
 }
 
@@ -1372,7 +1372,7 @@ func TestProcessTask_PopulatesRuntimeFields(t *testing.T) {
 			gotAttemptedAt *time.Time
 			gotCtxCreated  time.Time
 			gotCtxOk       bool
-			processed      int32
+			processed      atomic.Int32
 		)
 
 		handler := mocks.NewTaskHandler(t)
@@ -1382,7 +1382,7 @@ func TestProcessTask_PopulatesRuntimeFields(t *testing.T) {
 				gotMessages = task.Messages
 				gotAttemptedAt = task.AttemptedAt
 				gotCtxCreated, gotCtxOk = asynqpg.GetCreatedAt(ctx)
-				atomic.StoreInt32(&processed, 1)
+				processed.Store(1)
 				return nil
 			}).Maybe()
 
@@ -1411,7 +1411,7 @@ func TestProcessTask_PopulatesRuntimeFields(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) == 1
+			return processed.Load() == 1
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed")
 
 		err = c.Stop()
@@ -1446,13 +1446,13 @@ func TestProcessTask_MessagesPopulatedOnRetry(t *testing.T) {
 		idempotencyToken := "retry-msg-token-1"
 		var (
 			gotMessages []string
-			processed   int32
+			processed   atomic.Int32
 		)
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				count := atomic.AddInt32(&processed, 1)
+				count := processed.Add(1)
 				if count == 1 {
 					return fmt.Errorf("first attempt failed")
 				}
@@ -1487,7 +1487,7 @@ func TestProcessTask_MessagesPopulatedOnRetry(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) >= 2
+			return processed.Load() >= 2
 		}, 10*time.Second, 50*time.Millisecond, "task should be processed at least twice")
 
 		err = c.Stop()
@@ -1510,12 +1510,12 @@ func TestSkipRetry(t *testing.T) {
 		taskType := "skip_retry_task_" + t.Name()
 		idempotencyToken := "skip-retry-token-1"
 		maxRetry := 5
-		var processed int32
+		var processed atomic.Int32
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&processed, 1)
+				processed.Add(1)
 				return asynqpg.ErrSkipRetry
 			}).Maybe()
 
@@ -1546,7 +1546,7 @@ func TestSkipRetry(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) == 1
+			return processed.Load() == 1
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed once")
 
 		err = c.Stop()
@@ -1556,7 +1556,7 @@ func TestSkipRetry(t *testing.T) {
 		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
 		require.NoError(t, err)
 		assert.Equal(t, "failed", task.Status, "task should be in failed status")
-		assert.Equal(t, int32(1), atomic.LoadInt32(&processed), "handler should be called exactly once")
+		assert.Equal(t, int32(1), processed.Load(), "handler should be called exactly once")
 	})
 
 	t.Run("immediately fails task when handler returns wrapped SkipRetry", func(t *testing.T) {
@@ -1567,12 +1567,12 @@ func TestSkipRetry(t *testing.T) {
 		taskType := "skip_retry_wrapped_" + t.Name()
 		idempotencyToken := "skip-retry-wrapped-token-1"
 		maxRetry := 5
-		var processed int32
+		var processed atomic.Int32
 
 		handler := mocks.NewTaskHandler(t)
 		handler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-				atomic.AddInt32(&processed, 1)
+				processed.Add(1)
 				return fmt.Errorf("invalid payload: %w", asynqpg.ErrSkipRetry)
 			}).Maybe()
 
@@ -1603,7 +1603,7 @@ func TestSkipRetry(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Eventually(t, func() bool {
-			return atomic.LoadInt32(&processed) == 1
+			return processed.Load() == 1
 		}, 2*time.Second, 50*time.Millisecond, "task should be processed once")
 
 		err = c.Stop()

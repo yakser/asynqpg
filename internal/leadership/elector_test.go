@@ -113,8 +113,7 @@ func TestElector_Start_Success(t *testing.T) {
 		TTL:           150 * time.Millisecond,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	require.NoError(t, e.Start(ctx))
 	defer e.Stop()
@@ -605,7 +604,7 @@ func TestElector_ElectionLoop_ContextCancellation(t *testing.T) {
 		ElectInterval: 50 * time.Millisecond,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	require.NoError(t, e.Start(ctx))
 

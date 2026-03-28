@@ -8,7 +8,7 @@ import (
 
 type apiResponse struct {
 	Data  any       `json:"data"`
-	Error *apiError `json:"error,omitempty"`
+	Error *apiError `json:"error,omitzero"`
 }
 
 type apiError struct {

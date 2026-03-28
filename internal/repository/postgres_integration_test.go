@@ -143,7 +143,7 @@ func TestGetReadyTasks_RespectsLimit(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, err := repo.PushTask(ctx, &repository.PushTaskParams{
 			Type:         "ready-limit",
 			Payload:      []byte(`{}`),
@@ -173,7 +173,7 @@ func TestGetReadyTasks_SkipsLockedTasks(t *testing.T) {
 	ctx := context.Background()
 
 	// Arrange
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		_, err := repo.PushTask(ctx, &repository.PushTaskParams{
 			Type:         "ready-locked",
 			Payload:      []byte(`{}`),

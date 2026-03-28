@@ -123,8 +123,7 @@ func (bc *BatchCompleter) Start(ctx context.Context) error {
 	bc.isRunning = true
 	bc.mu.Unlock()
 
-	bc.wg.Add(1)
-	go bc.runLoop()
+	bc.wg.Go(bc.runLoop)
 
 	return nil
 }
@@ -252,8 +251,6 @@ func (bc *BatchCompleter) triggerFlush() {
 }
 
 func (bc *BatchCompleter) runLoop() {
-	defer bc.wg.Done()
-
 	ticker := time.NewTicker(bc.config.FlushInterval)
 	defer ticker.Stop()
 

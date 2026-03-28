@@ -103,8 +103,7 @@ func (e *Elector) Start(ctx context.Context) error {
 	ctx, e.cancel = context.WithCancel(ctx)
 	e.started = true
 
-	e.wg.Add(1)
-	go e.electionLoop(ctx)
+	e.wg.Go(func() { e.electionLoop(ctx) })
 
 	e.config.Logger.Info("elector started",
 		"client_id", e.config.ClientID,
@@ -161,8 +160,6 @@ func (e *Elector) Subscribe() <-chan bool {
 }
 
 func (e *Elector) electionLoop(ctx context.Context) {
-	defer e.wg.Done()
-
 	ticker := time.NewTicker(e.config.ElectInterval)
 	defer ticker.Stop()
 

@@ -23,7 +23,7 @@ func TestHandleStats(t *testing.T) {
 
 		p := mocks.NewPool(t)
 		p.EXPECT().SelectContext(mock.Anything, mock.Anything, mock.Anything).
-			Run(func(_ context.Context, dest interface{}, _ string, _ ...interface{}) {
+			Run(func(_ context.Context, dest any, _ string, _ ...any) {
 				stats, ok := dest.(*[]TaskTypeStat)
 				if !ok {
 					return
@@ -114,7 +114,7 @@ func TestHandleTaskTypes(t *testing.T) {
 
 		p := mocks.NewPool(t)
 		p.EXPECT().SelectContext(mock.Anything, mock.Anything, mock.Anything).
-			Run(func(_ context.Context, dest interface{}, _ string, _ ...interface{}) {
+			Run(func(_ context.Context, dest any, _ string, _ ...any) {
 				types, ok := dest.(*[]string)
 				if !ok {
 					return

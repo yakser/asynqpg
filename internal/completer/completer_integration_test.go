@@ -38,7 +38,7 @@ func createAndFetchTasks(t *testing.T, repo *repository.Repository, count int, t
 	ctx := context.Background()
 
 	tasks := make([]repository.PushTaskParams, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		tasks[i] = repository.PushTaskParams{
 			Type:         taskType,
 			Payload:      []byte(`{}`),
@@ -351,17 +351,15 @@ func TestBatchCompleter_Backpressure_Block(t *testing.T) {
 
 	var blocked atomic.Bool
 	var wg sync.WaitGroup
-	wg.Add(1)
 
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i, id := range ids {
 			if i >= 5 {
 				blocked.Store(true)
 			}
 			_ = bc.Complete(id)
 		}
-	}()
+	})
 
 	// The goroutine should be blocked after 5 operations
 	assert.Eventually(t, blocked.Load, 2*time.Second, 10*time.Millisecond, "should have reached backpressure point")
@@ -426,11 +424,9 @@ func TestBatchCompleter_ConcurrentOperations(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for _, id := range ids {
-		wg.Add(1)
-		go func(taskID int64) {
-			defer wg.Done()
-			_ = bc.Complete(taskID)
-		}(id)
+		wg.Go(func() {
+			_ = bc.Complete(id)
+		})
 	}
 
 	wg.Wait()
