@@ -58,6 +58,7 @@ type BatchCompleter struct {
 	// fixme: implement completer without sync.Cond and make it simple
 	backlogCond *sync.Cond
 	backlogSize int
+	flushCh     chan struct{}
 
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -104,6 +105,7 @@ func NewBatchCompleter(repo completerRepo, cfg Config) *BatchCompleter {
 		pendingFail:     make(map[int64]*FailRequest),
 		pendingRetry:    make(map[int64]*RetryRequest),
 		pendingSnooze:   make(map[int64]*SnoozeRequest),
+		flushCh:         make(chan struct{}, 1),
 	}
 	bc.backlogCond = sync.NewCond(&bc.mu)
 
@@ -240,7 +242,12 @@ func (bc *BatchCompleter) shouldFlush() bool {
 }
 
 func (bc *BatchCompleter) triggerFlush() {
-	// Signal the loop to flush immediately
+	// Non-blocking send to wake up runLoop for an immediate flush.
+	select {
+	case bc.flushCh <- struct{}{}:
+	default:
+	}
+	// Also wake backpressure waiters so they can re-check.
 	bc.backlogCond.Broadcast()
 }
 
@@ -256,6 +263,8 @@ func (bc *BatchCompleter) runLoop() {
 			bc.finalFlush()
 			return
 		case <-ticker.C:
+			bc.flush()
+		case <-bc.flushCh:
 			bc.flush()
 		}
 	}
