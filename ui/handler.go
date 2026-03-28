@@ -6,13 +6,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/client"
 )
 
 // handler holds all dependencies for the UI HTTP handler.
 type handler struct {
-	pool         asynqpg.Pool
+	pool         pool
 	client       *client.Client
 	repo         *repository
 	logger       *slog.Logger

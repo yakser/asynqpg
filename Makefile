@@ -9,6 +9,13 @@ migrate: ## Apply migrations
 	docker exec -i asynqpg-postgres psql -U postgres -d asynqpg < migrations/001_initial.sql
 	@echo "Migrations completed"
 
+.PHONY: generate
+generate: ## Regenerate all mocks (all modules)
+	@echo "Regenerating mocks..."
+	go generate ./...
+	cd ui && go generate ./...
+	@echo "Mocks regenerated"
+
 .PHONY: lint
 lint: ## Run golangci-lint (all modules)
 	@echo "Running linter..."

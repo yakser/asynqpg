@@ -7,13 +7,11 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-
-	"github.com/yakser/asynqpg"
 )
 
 // repository provides database queries specific to the UI layer.
 type repository struct {
-	db asynqpg.Pool
+	db pool
 
 	typesCacheMu    sync.RWMutex
 	typesCacheData  []string
@@ -22,8 +20,8 @@ type repository struct {
 
 const typesCacheTTL = 30 * time.Second
 
-func newRepository(pool asynqpg.Pool) *repository {
-	return &repository{db: pool}
+func newRepository(db pool) *repository {
+	return &repository{db: db}
 }
 
 // TaskTypeStat represents a count of tasks grouped by type and status.

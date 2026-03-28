@@ -5,94 +5,49 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/yakser/asynqpg/internal/leadership/mocks"
 )
 
 const testElectorGroup = "test-group"
 
-type mockResult struct {
+// testSQLResult implements sql.Result for use in mock return values.
+type testSQLResult struct {
 	rowsAffected int64
 	err          error
 }
 
-func (r *mockResult) LastInsertId() (int64, error) { return 0, nil }
-func (r *mockResult) RowsAffected() (int64, error) { return r.rowsAffected, r.err }
+func (r *testSQLResult) LastInsertId() (int64, error) { return 0, nil }
+func (r *testSQLResult) RowsAffected() (int64, error) { return r.rowsAffected, r.err }
 
-type execCall struct {
-	query string
-	args  []any
+// mockElected sets up the mock so that every election succeeds:
+// delete expired (4 args) returns 0 rows, insert/upsert (6 args) returns 1 row.
+func mockElected(db *mocks.DbExecer) {
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Maybe()
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 1}, nil).Maybe()
 }
 
-type mockDB struct {
-	mu    sync.Mutex
-	calls []execCall
-
-	// Results to return in order. If exhausted, returns the last one.
-	results []mockExecResult
-}
-
-type mockExecResult struct {
-	result sql.Result
-	err    error
-}
-
-func newMockDB(results ...mockExecResult) *mockDB {
-	return &mockDB{results: results}
-}
-
-func (m *mockDB) ExecContext(_ context.Context, query string, args ...any) (sql.Result, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.calls = append(m.calls, execCall{query: query, args: args})
-
-	idx := len(m.calls) - 1
-	if idx >= len(m.results) {
-		idx = len(m.results) - 1
-	}
-	if idx < 0 {
-		return &mockResult{rowsAffected: 0}, nil
-	}
-	return m.results[idx].result, m.results[idx].err
-}
-
-func (m *mockDB) callCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.calls)
-}
-
-func (m *mockDB) getCall(i int) execCall {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.calls[i]
-}
-
-// Helper: create mock that always elects (delete OK, insert RowsAffected=1)
-func mockDBElected() *mockDB {
-	return newMockDB(
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil}, // delete expired
-		mockExecResult{result: &mockResult{rowsAffected: 1}, err: nil}, // insert/upsert
-	)
-}
-
-// Helper: create mock that never elects (delete OK, insert RowsAffected=0)
-func mockDBNotElected() *mockDB {
-	return newMockDB(
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil}, // delete expired
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil}, // insert/upsert
-	)
-}
-
-// Helper: create mock that returns error
-func mockDBError(err error) *mockDB {
-	return newMockDB(
-		mockExecResult{result: nil, err: err},
-	)
+// mockNotElected sets up the mock so that every election fails:
+// delete expired (4 args) returns 0 rows, insert/upsert (6 args) returns 0 rows.
+func mockNotElected(db *mocks.DbExecer) {
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Maybe()
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Maybe()
 }
 
 func TestElectorConfig_SetDefaults_AllEmpty(t *testing.T) {
@@ -141,15 +96,18 @@ func TestElectorConfig_SetDefaults_NegativeDurations(t *testing.T) {
 func TestElector_IsLeader_InitiallyFalse(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBNotElected()
+	db := mocks.NewDbExecer(t)
 	e := NewElector(db, ElectorConfig{})
+
 	require.False(t, e.IsLeader())
 }
 
 func TestElector_Start_Success(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	db := mocks.NewDbExecer(t)
+	mockElected(db)
+
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
 		TTL:           150 * time.Millisecond,
@@ -161,17 +119,15 @@ func TestElector_Start_Success(t *testing.T) {
 	require.NoError(t, e.Start(ctx))
 	defer e.Stop()
 
-	// Wait for first election attempt
-	time.Sleep(100 * time.Millisecond)
-
-	require.True(t, e.IsLeader())
-	require.GreaterOrEqual(t, db.callCount(), 2, "expected at least 2 DB calls (delete expired + insert)")
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_Start_Idempotent(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	db := mocks.NewDbExecer(t)
+	mockElected(db)
+
 	e := NewElector(db, ElectorConfig{ElectInterval: time.Hour})
 
 	ctx := context.Background()
@@ -184,8 +140,9 @@ func TestElector_Start_Idempotent(t *testing.T) {
 func TestElector_Stop_NotStarted(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBNotElected()
+	db := mocks.NewDbExecer(t)
 	e := NewElector(db, ElectorConfig{})
+
 	// Should not panic
 	e.Stop()
 }
@@ -193,7 +150,9 @@ func TestElector_Stop_NotStarted(t *testing.T) {
 func TestElector_Stop_Idempotent(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	db := mocks.NewDbExecer(t)
+	mockElected(db)
+
 	e := NewElector(db, ElectorConfig{ElectInterval: time.Hour})
 
 	require.NoError(t, e.Start(context.Background()))
@@ -206,7 +165,23 @@ func TestElector_Stop_Idempotent(t *testing.T) {
 func TestElector_Stop_ResignsLeadership(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	var queries sync.Map
+	var queryIdx atomic.Int64
+
+	db := mocks.NewDbExecer(t)
+	// 4-arg calls: delete expired + resign
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, query string, _ ...any) {
+			idx := queryIdx.Add(1)
+			queries.Store(idx, query)
+		}).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Maybe()
+	// 6-arg calls: insert/upsert
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 1}, nil).Maybe()
+
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
 		TTL:           150 * time.Millisecond,
@@ -214,31 +189,31 @@ func TestElector_Stop_ResignsLeadership(t *testing.T) {
 
 	require.NoError(t, e.Start(context.Background()))
 
-	// Wait to become leader
-	time.Sleep(100 * time.Millisecond)
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	e.Stop()
 
 	require.False(t, e.IsLeader())
 
-	// Verify resign query was called (DELETE with name and leader_id)
+	// Verify that a resign query (DELETE ... WHERE name = $1 AND leader_id = $2) was called.
 	found := false
-	for i := 0; i < db.callCount(); i++ {
-		call := db.getCall(i)
-		if len(call.args) == 2 {
-			// resign query: DELETE FROM asynqpg_leader WHERE name = $1 AND leader_id = $2
+	queries.Range(func(_, value any) bool {
+		q := value.(string)
+		if strings.Contains(q, "leader_id") && strings.Contains(q, "DELETE") {
 			found = true
-			break
+			return false
 		}
-	}
+		return true
+	})
 	require.True(t, found, "expected resign query to be called")
 }
 
 func TestElector_ElectsLeader_RowsAffected1(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	db := mocks.NewDbExecer(t)
+	mockElected(db)
+
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
 	})
@@ -246,15 +221,15 @@ func TestElector_ElectsLeader_RowsAffected1(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
-
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_NotElected_RowsAffected0(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBNotElected()
+	db := mocks.NewDbExecer(t)
+	mockNotElected(db)
+
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
 	})
@@ -262,23 +237,30 @@ func TestElector_NotElected_RowsAffected0(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
-
-	require.False(t, e.IsLeader())
+	require.Eventually(t, func() bool { return !e.IsLeader() }, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_LosesLeadership(t *testing.T) {
 	t.Parallel()
 
-	// First election: wins. Subsequent: loses.
-	db := newMockDB(
-		// First attempt (delete + insert)
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 1}, err: nil},
-		// Second attempt (delete + insert) – loses
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-	)
+	// Use a counter to change insert/upsert behavior over time.
+	var insertCallCount atomic.Int64
+
+	db := mocks.NewDbExecer(t)
+	// 4-arg calls (delete expired + resign): always succeed with 0 rows.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Maybe()
+	// 6-arg calls (insert/upsert): first call elected, subsequent not.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, _ string, _ ...any) (sql.Result, error) {
+			n := insertCallCount.Add(1)
+			if n == 1 {
+				return &testSQLResult{rowsAffected: 1}, nil
+			}
+			return &testSQLResult{rowsAffected: 0}, nil
+		}).Maybe()
 
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -288,18 +270,18 @@ func TestElector_LosesLeadership(t *testing.T) {
 	defer e.Stop()
 
 	// Wait for first election
-	time.Sleep(30 * time.Millisecond)
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	// Wait for second election
-	time.Sleep(80 * time.Millisecond)
-	require.False(t, e.IsLeader())
+	require.Eventually(t, func() bool { return !e.IsLeader() }, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_MaintainsLeadership(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected() // Always returns RowsAffected=1
+	db := mocks.NewDbExecer(t)
+	mockElected(db)
+
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
 	})
@@ -307,25 +289,35 @@ func TestElector_MaintainsLeadership(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(30 * time.Millisecond)
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	// Wait for re-election
-	time.Sleep(80 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	require.True(t, e.IsLeader())
 }
 
 func TestElector_ErrorAssumedLostLeadership(t *testing.T) {
 	t.Parallel()
 
-	// First: win election. Then: DB error.
-	db := newMockDB(
-		// First attempt: success
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 1}, err: nil},
-		// Second attempt: error on delete expired
-		mockExecResult{result: nil, err: errors.New("connection refused")},
-	)
+	// Use a counter: first delete succeeds, first insert wins, second delete errors.
+	var fourArgCallCount atomic.Int64
+
+	db := mocks.NewDbExecer(t)
+	// 4-arg calls (delete expired): first succeeds, then errors.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, _ string, _ ...any) (sql.Result, error) {
+			n := fourArgCallCount.Add(1)
+			if n == 1 {
+				return &testSQLResult{rowsAffected: 0}, nil
+			}
+			// Resign also matches 4-arg; returning error is fine for resign too.
+			return nil, errors.New("connection refused")
+		}).Maybe()
+	// 6-arg calls (insert/upsert): always elected.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 1}, nil).Maybe()
 
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -334,22 +326,24 @@ func TestElector_ErrorAssumedLostLeadership(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(30 * time.Millisecond)
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	// Wait for error attempt
-	time.Sleep(80 * time.Millisecond)
-	require.False(t, e.IsLeader())
+	require.Eventually(t, func() bool { return !e.IsLeader() }, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_RowsAffectedError(t *testing.T) {
 	t.Parallel()
 
-	// RowsAffected returns error
-	db := newMockDB(
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 0, err: errors.New("rows affected error")}, err: nil},
-	)
+	db := mocks.NewDbExecer(t)
+	// 4-arg calls (delete expired): succeed.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Maybe()
+	// 6-arg calls (insert/upsert): result.RowsAffected() returns error.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0, err: errors.New("rows affected error")}, nil).Maybe()
 
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -358,14 +352,34 @@ func TestElector_RowsAffectedError(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
-	require.False(t, e.IsLeader())
+	require.Eventually(t, func() bool { return !e.IsLeader() }, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_DeletesExpiredLeaders(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	var capturedName string
+	var mu sync.Mutex
+
+	db := mocks.NewDbExecer(t)
+	// 4-arg calls (delete expired): capture the name arg.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ string, args ...any) {
+			mu.Lock()
+			defer mu.Unlock()
+			if capturedName == "" && len(args) >= 1 {
+				if name, ok := args[0].(string); ok {
+					capturedName = name
+				}
+			}
+		}).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Maybe()
+	// 6-arg calls (insert/upsert).
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 1}, nil).Maybe()
+
 	e := NewElector(db, ElectorConfig{
 		ClientID:      "test-client",
 		Name:          testElectorGroup,
@@ -375,18 +389,40 @@ func TestElector_DeletesExpiredLeaders(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return capturedName != ""
+	}, 2*time.Second, 10*time.Millisecond)
 
-	// First call should be the delete expired query
-	call := db.getCall(0)
-	require.Len(t, call.args, 2)
-	require.Equal(t, testElectorGroup, call.args[0])
+	mu.Lock()
+	require.Equal(t, testElectorGroup, capturedName)
+	mu.Unlock()
 }
 
 func TestElector_ElectionSQL_InsertOnConflict(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	var capturedInsertArgs []any
+	var mu sync.Mutex
+
+	db := mocks.NewDbExecer(t)
+	// 4-arg calls (delete expired).
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Maybe()
+	// 6-arg calls (insert/upsert): capture args.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ string, args ...any) {
+			mu.Lock()
+			defer mu.Unlock()
+			if capturedInsertArgs == nil {
+				capturedInsertArgs = args
+			}
+		}).
+		Return(&testSQLResult{rowsAffected: 1}, nil).Maybe()
+
 	e := NewElector(db, ElectorConfig{
 		ClientID:      "test-client",
 		Name:          testElectorGroup,
@@ -397,20 +433,23 @@ func TestElector_ElectionSQL_InsertOnConflict(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(capturedInsertArgs) > 0
+	}, 2*time.Second, 10*time.Millisecond)
 
-	// Second call should be the insert/upsert query
-	require.GreaterOrEqual(t, db.callCount(), 2)
-	call := db.getCall(1)
-	require.Len(t, call.args, 4, "insert: expected 4 args (name, client_id, now, expires_at)")
-	require.Equal(t, testElectorGroup, call.args[0])
-	require.Equal(t, "test-client", call.args[1])
+	mu.Lock()
+	require.Len(t, capturedInsertArgs, 4, "insert: expected 4 args (name, client_id, now, expires_at)")
+	require.Equal(t, testElectorGroup, capturedInsertArgs[0])
+	require.Equal(t, "test-client", capturedInsertArgs[1])
+	mu.Unlock()
 }
 
 func TestElector_Subscribe_InitialState(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBNotElected()
+	db := mocks.NewDbExecer(t)
 	e := NewElector(db, ElectorConfig{})
 
 	ch := e.Subscribe()
@@ -426,7 +465,9 @@ func TestElector_Subscribe_InitialState(t *testing.T) {
 func TestElector_Subscribe_GainLeadership(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	db := mocks.NewDbExecer(t)
+	mockElected(db)
+
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
 	})
@@ -450,17 +491,23 @@ func TestElector_Subscribe_GainLeadership(t *testing.T) {
 func TestElector_Subscribe_LoseLeadership(t *testing.T) {
 	t.Parallel()
 
-	db := newMockDB(
-		// First: win
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 1}, err: nil},
-		// Second: lose
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		// Further: keep losing
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-	)
+	var insertCallCount atomic.Int64
+
+	db := mocks.NewDbExecer(t)
+	// 4-arg calls (delete expired + resign): always succeed.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Maybe()
+	// 6-arg calls (insert/upsert): first elected, then not.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, _ string, _ ...any) (sql.Result, error) {
+			n := insertCallCount.Add(1)
+			if n == 1 {
+				return &testSQLResult{rowsAffected: 1}, nil
+			}
+			return &testSQLResult{rowsAffected: 0}, nil
+		}).Maybe()
 
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -492,7 +539,9 @@ func TestElector_Subscribe_LoseLeadership(t *testing.T) {
 func TestElector_Subscribe_MultipleSubscribers(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	db := mocks.NewDbExecer(t)
+	mockElected(db)
+
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
 	})
@@ -521,19 +570,21 @@ func TestElector_Subscribe_MultipleSubscribers(t *testing.T) {
 func TestElector_Subscribe_FullChannel(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	db := mocks.NewDbExecer(t)
+	mockElected(db)
+
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
 	})
 
 	ch := e.Subscribe()
-	// Don't read from ch – channel buffer (1) has initial value
+	// Don't read from ch -- channel buffer (1) has initial value
 	// setLeader should not block even if channel is full
 
 	require.NoError(t, e.Start(context.Background()))
 
-	// Wait for election – should not deadlock
-	time.Sleep(100 * time.Millisecond)
+	// Wait for election -- should not deadlock
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 	e.Stop()
 
 	// We should still be able to read at least the initial value
@@ -547,7 +598,9 @@ func TestElector_Subscribe_FullChannel(t *testing.T) {
 func TestElector_ElectionLoop_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBElected()
+	db := mocks.NewDbExecer(t)
+	mockElected(db)
+
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
 	})
@@ -556,7 +609,7 @@ func TestElector_ElectionLoop_ContextCancellation(t *testing.T) {
 
 	require.NoError(t, e.Start(ctx))
 
-	time.Sleep(30 * time.Millisecond)
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 	cancel()
 
 	// Stop should complete quickly since context is already cancelled
@@ -576,14 +629,23 @@ func TestElector_ElectionLoop_ContextCancellation(t *testing.T) {
 func TestElector_Resign_DBError(t *testing.T) {
 	t.Parallel()
 
-	// First attempts: win leadership
-	// resign: error
-	db := newMockDB(
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 1}, err: nil},
-		// resign will be the next call – return error
-		mockExecResult{result: nil, err: errors.New("connection closed")},
-	)
+	var fourArgCallCount atomic.Int64
+
+	db := mocks.NewDbExecer(t)
+	// 4-arg calls: first delete succeeds, then resign returns error.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, _ string, _ ...any) (sql.Result, error) {
+			n := fourArgCallCount.Add(1)
+			if n == 1 {
+				return &testSQLResult{rowsAffected: 0}, nil
+			}
+			return nil, errors.New("connection closed")
+		}).Maybe()
+	// 6-arg calls: elected.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 1}, nil).Maybe()
 
 	e := NewElector(db, ElectorConfig{
 		ElectInterval: 50 * time.Millisecond,
@@ -591,7 +653,7 @@ func TestElector_Resign_DBError(t *testing.T) {
 
 	require.NoError(t, e.Start(context.Background()))
 
-	time.Sleep(30 * time.Millisecond)
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	// Stop should not panic even if resign fails
 	e.Stop()
@@ -600,10 +662,15 @@ func TestElector_Resign_DBError(t *testing.T) {
 func TestAttemptElect_DeleteExpiredError(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBError(fmt.Errorf("delete error"))
+	db := mocks.NewDbExecer(t)
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, fmt.Errorf("delete error")).Once()
+
 	e := NewElector(db, ElectorConfig{})
 
 	elected, err := e.attemptElect(context.Background())
+
 	require.Error(t, err)
 	require.False(t, elected)
 }
@@ -611,13 +678,20 @@ func TestAttemptElect_DeleteExpiredError(t *testing.T) {
 func TestAttemptElect_InsertError(t *testing.T) {
 	t.Parallel()
 
-	db := newMockDB(
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: nil, err: fmt.Errorf("insert error")},
-	)
+	db := mocks.NewDbExecer(t)
+	// Delete expired succeeds.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Once()
+	// Insert fails.
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, fmt.Errorf("insert error")).Once()
+
 	e := NewElector(db, ElectorConfig{})
 
 	elected, err := e.attemptElect(context.Background())
+
 	require.Error(t, err)
 	require.False(t, elected)
 }
@@ -625,13 +699,18 @@ func TestAttemptElect_InsertError(t *testing.T) {
 func TestAttemptElect_Success(t *testing.T) {
 	t.Parallel()
 
-	db := newMockDB(
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 1}, err: nil},
-	)
+	db := mocks.NewDbExecer(t)
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Once()
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 1}, nil).Once()
+
 	e := NewElector(db, ElectorConfig{ClientID: "test"})
 
 	elected, err := e.attemptElect(context.Background())
+
 	require.NoError(t, err)
 	require.True(t, elected)
 }
@@ -639,13 +718,18 @@ func TestAttemptElect_Success(t *testing.T) {
 func TestAttemptElect_NotElected(t *testing.T) {
 	t.Parallel()
 
-	db := newMockDB(
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-		mockExecResult{result: &mockResult{rowsAffected: 0}, err: nil},
-	)
+	db := mocks.NewDbExecer(t)
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Once()
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&testSQLResult{rowsAffected: 0}, nil).Once()
+
 	e := NewElector(db, ElectorConfig{ClientID: "test"})
 
 	elected, err := e.attemptElect(context.Background())
+
 	require.NoError(t, err)
 	require.False(t, elected)
 }
@@ -653,27 +737,44 @@ func TestAttemptElect_NotElected(t *testing.T) {
 func TestResign_Success(t *testing.T) {
 	t.Parallel()
 
-	db := newMockDB(
-		mockExecResult{result: &mockResult{rowsAffected: 1}, err: nil},
-	)
+	var capturedArgs []any
+	var mu sync.Mutex
+
+	db := mocks.NewDbExecer(t)
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ string, args ...any) {
+			mu.Lock()
+			capturedArgs = args
+			mu.Unlock()
+		}).
+		Return(&testSQLResult{rowsAffected: 1}, nil).Once()
+
 	e := NewElector(db, ElectorConfig{ClientID: "test-client", Name: testElectorGroup})
 	e.isLeader.Store(true)
 
 	err := e.resign(context.Background())
+
 	require.NoError(t, err)
 	require.False(t, e.IsLeader())
 
-	call := db.getCall(0)
-	require.Equal(t, testElectorGroup, call.args[0])
-	require.Equal(t, "test-client", call.args[1])
+	mu.Lock()
+	require.Equal(t, testElectorGroup, capturedArgs[0])
+	require.Equal(t, "test-client", capturedArgs[1])
+	mu.Unlock()
 }
 
 func TestResign_Error(t *testing.T) {
 	t.Parallel()
 
-	db := mockDBError(fmt.Errorf("db error"))
+	db := mocks.NewDbExecer(t)
+	db.EXPECT().
+		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, fmt.Errorf("db error")).Once()
+
 	e := NewElector(db, ElectorConfig{ClientID: "test"})
 
 	err := e.resign(context.Background())
+
 	require.Error(t, err)
 }

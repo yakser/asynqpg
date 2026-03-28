@@ -3,6 +3,8 @@ package maintenance
 import "context"
 
 // Service represents a background maintenance service.
+//
+//go:generate go tool mockery --case underscore --with-expecter --name Service
 type Service interface {
 	// Start starts the service. It should return immediately after starting
 	// background goroutines. The service should stop when ctx is cancelled.

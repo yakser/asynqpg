@@ -11,6 +11,8 @@ import (
 // or encounters an unrecoverable error (ErrSkipRetry, panic).
 // Implementations can use this for alerting, dead letter queue routing,
 // or external error tracking (e.g., Sentry, PagerDuty).
+//
+//go:generate go tool mockery --case underscore --with-expecter --name ErrorHandler
 type ErrorHandler interface {
 	HandleError(ctx context.Context, task *TaskInfo, err error)
 }

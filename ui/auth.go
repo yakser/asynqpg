@@ -4,32 +4,18 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/yakser/asynqpg/ui/uiauth"
 )
-
-// User represents an authenticated user from any OAuth/SSO provider.
-type User struct {
-	ID        string `json:"id"`
-	Provider  string `json:"provider"`
-	Name      string `json:"name"`
-	AvatarURL string `json:"avatar_url"`
-	Email     string `json:"email"`
-}
-
-// Session represents an authenticated user session.
-type Session struct {
-	Token     string
-	User      User
-	CreatedAt time.Time
-	ExpiresAt time.Time
-}
 
 // AuthProvider defines the interface for OAuth/SSO authentication providers.
 // Implementations handle the specific OAuth flow for a given identity provider.
+//
+//go:generate go tool mockery --case underscore --with-expecter --exported --name AuthProvider
 type AuthProvider interface {
 	// ID returns a unique identifier for this provider (e.g. "github", "google", "okta").
 	ID() string
@@ -43,20 +29,19 @@ type AuthProvider interface {
 	BeginAuth(w http.ResponseWriter, r *http.Request, callbackURL string, state string)
 	// CompleteAuth handles the OAuth callback. It exchanges the authorization code for tokens,
 	// fetches user information, and returns the authenticated user.
-	CompleteAuth(w http.ResponseWriter, r *http.Request) (*User, error)
+	CompleteAuth(w http.ResponseWriter, r *http.Request) (*uiauth.User, error)
 }
 
 // SessionStore manages user sessions. The default in-memory implementation
 // is suitable for single-server deployments. For multi-server setups,
 // provide a shared store (e.g. PostgreSQL, Redis).
+//
+//go:generate go tool mockery --case underscore --with-expecter --exported --name SessionStore
 type SessionStore interface {
-	Get(ctx context.Context, token string) (*Session, error)
-	Save(ctx context.Context, session *Session) error
+	Get(ctx context.Context, token string) (*uiauth.Session, error)
+	Save(ctx context.Context, session *uiauth.Session) error
 	Delete(ctx context.Context, token string) error
 }
-
-// ErrSessionNotFound is returned when a session token is not found in the store.
-var ErrSessionNotFound = errors.New("session not found")
 
 // contextKey is an unexported type for context keys in this package.
 type contextKey int
@@ -65,12 +50,12 @@ const ctxKeyUser contextKey = iota
 
 // UserFromContext returns the authenticated user from the request context,
 // or nil if the request is not authenticated.
-func UserFromContext(ctx context.Context) *User {
-	u, _ := ctx.Value(ctxKeyUser).(*User)
+func UserFromContext(ctx context.Context) *uiauth.User {
+	u, _ := ctx.Value(ctxKeyUser).(*uiauth.User)
 	return u
 }
 
-func withUser(ctx context.Context, user *User) context.Context {
+func withUser(ctx context.Context, user *uiauth.User) context.Context {
 	return context.WithValue(ctx, ctxKeyUser, user)
 }
 
@@ -113,7 +98,7 @@ func (s *MemorySessionStore) cleanupLoop(ctx context.Context) {
 func (s *MemorySessionStore) removeExpired() {
 	now := time.Now()
 	s.sessions.Range(func(key, value any) bool {
-		sess, ok := value.(*Session)
+		sess, ok := value.(*uiauth.Session)
 		if ok && now.After(sess.ExpiresAt) {
 			s.sessions.Delete(key)
 		}
@@ -122,27 +107,27 @@ func (s *MemorySessionStore) removeExpired() {
 }
 
 // Get retrieves a session by token. Returns ErrSessionNotFound if not found or expired.
-func (s *MemorySessionStore) Get(_ context.Context, token string) (*Session, error) {
+func (s *MemorySessionStore) Get(_ context.Context, token string) (*uiauth.Session, error) {
 	val, ok := s.sessions.Load(token)
 	if !ok {
-		return nil, ErrSessionNotFound
+		return nil, uiauth.ErrSessionNotFound
 	}
 
-	sess, ok := val.(*Session)
+	sess, ok := val.(*uiauth.Session)
 	if !ok {
-		return nil, ErrSessionNotFound
+		return nil, uiauth.ErrSessionNotFound
 	}
 
 	if time.Now().After(sess.ExpiresAt) {
 		s.sessions.Delete(token)
-		return nil, ErrSessionNotFound
+		return nil, uiauth.ErrSessionNotFound
 	}
 
 	return sess, nil
 }
 
 // Save stores a session. The session's Token field is used as the key.
-func (s *MemorySessionStore) Save(_ context.Context, session *Session) error {
+func (s *MemorySessionStore) Save(_ context.Context, session *uiauth.Session) error {
 	s.sessions.Store(session.Token, session)
 	return nil
 }

@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/yakser/asynqpg/ui/uiauth"
 )
 
 func TestMemorySessionStore_SaveAndGet(t *testing.T) {
@@ -17,9 +19,9 @@ func TestMemorySessionStore_SaveAndGet(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	sess := &Session{
+	sess := &uiauth.Session{
 		Token:     "test-token",
-		User:      User{ID: "1", Name: "Alice", Provider: "github"},
+		User:      uiauth.User{ID: "1", Name: "Alice", Provider: "github"},
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
@@ -40,7 +42,7 @@ func TestMemorySessionStore_GetNotFound(t *testing.T) {
 	defer store.Close()
 
 	_, err := store.Get(context.Background(), "nonexistent")
-	assert.ErrorIs(t, err, ErrSessionNotFound)
+	assert.ErrorIs(t, err, uiauth.ErrSessionNotFound)
 }
 
 func TestMemorySessionStore_GetExpired(t *testing.T) {
@@ -50,9 +52,9 @@ func TestMemorySessionStore_GetExpired(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	sess := &Session{
+	sess := &uiauth.Session{
 		Token:     "expired-token",
-		User:      User{ID: "1", Name: "Alice"},
+		User:      uiauth.User{ID: "1", Name: "Alice"},
 		CreatedAt: time.Now().Add(-2 * time.Hour),
 		ExpiresAt: time.Now().Add(-time.Hour),
 	}
@@ -60,7 +62,7 @@ func TestMemorySessionStore_GetExpired(t *testing.T) {
 	require.NoError(t, store.Save(ctx, sess))
 
 	_, err := store.Get(ctx, "expired-token")
-	assert.ErrorIs(t, err, ErrSessionNotFound)
+	assert.ErrorIs(t, err, uiauth.ErrSessionNotFound)
 }
 
 func TestMemorySessionStore_Delete(t *testing.T) {
@@ -70,9 +72,9 @@ func TestMemorySessionStore_Delete(t *testing.T) {
 	defer store.Close()
 
 	ctx := context.Background()
-	sess := &Session{
+	sess := &uiauth.Session{
 		Token:     "to-delete",
-		User:      User{ID: "1"},
+		User:      uiauth.User{ID: "1"},
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
@@ -85,7 +87,7 @@ func TestMemorySessionStore_Delete(t *testing.T) {
 	require.NoError(t, store.Delete(ctx, "to-delete"))
 
 	_, err = store.Get(ctx, "to-delete")
-	assert.ErrorIs(t, err, ErrSessionNotFound)
+	assert.ErrorIs(t, err, uiauth.ErrSessionNotFound)
 }
 
 func TestMemorySessionStore_DeleteNotFound(t *testing.T) {
@@ -112,9 +114,9 @@ func TestMemorySessionStore_ConcurrentAccess(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			token := "token-" + time.Now().Format("150405.000000") + "-" + string(rune('A'+idx%26))
-			sess := &Session{
+			sess := &uiauth.Session{
 				Token:     token,
-				User:      User{ID: "u"},
+				User:      uiauth.User{ID: "u"},
 				CreatedAt: time.Now(),
 				ExpiresAt: time.Now().Add(time.Hour),
 			}
@@ -138,9 +140,9 @@ func TestMemorySessionStore_CleanupExpired(t *testing.T) {
 	go store.cleanupLoop(ctx)
 
 	bgCtx := context.Background()
-	sess := &Session{
+	sess := &uiauth.Session{
 		Token:     "expired-for-cleanup",
-		User:      User{ID: "1"},
+		User:      uiauth.User{ID: "1"},
 		CreatedAt: time.Now().Add(-2 * time.Hour),
 		ExpiresAt: time.Now().Add(-time.Hour),
 	}
@@ -150,7 +152,7 @@ func TestMemorySessionStore_CleanupExpired(t *testing.T) {
 	store.removeExpired()
 
 	_, err := store.Get(bgCtx, "expired-for-cleanup")
-	assert.ErrorIs(t, err, ErrSessionNotFound)
+	assert.ErrorIs(t, err, uiauth.ErrSessionNotFound)
 
 	store.Close()
 }
@@ -181,7 +183,7 @@ func TestGenerateSessionToken_Unique(t *testing.T) {
 func TestUserFromContext_WithUser(t *testing.T) {
 	t.Parallel()
 
-	user := &User{ID: "42", Name: "Bob", Provider: "github"}
+	user := &uiauth.User{ID: "42", Name: "Bob", Provider: "github"}
 	ctx := withUser(context.Background(), user)
 
 	got := UserFromContext(ctx)
@@ -200,7 +202,7 @@ func TestUserFromContext_WithoutUser(t *testing.T) {
 func TestWithUser_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	user := &User{ID: "1", Name: "Alice"}
+	user := &uiauth.User{ID: "1", Name: "Alice"}
 	ctx := withUser(context.Background(), user)
 	got := UserFromContext(ctx)
 

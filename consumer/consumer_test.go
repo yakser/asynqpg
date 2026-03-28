@@ -1,51 +1,52 @@
 package consumer
 
 import (
-	"context"
-	"database/sql"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/yakser/asynqpg"
+	"github.com/yakser/asynqpg/consumer/mocks"
 )
 
-// mockPool implements asynqpg.Pool for testing.
-type mockPool struct{}
+// testSQLResult implements sql.Result for testing.
+type testSQLResult struct{}
 
-func (m *mockPool) PingContext(_ context.Context) error { return nil }
+func (r testSQLResult) LastInsertId() (int64, error) { return 0, nil }
+func (r testSQLResult) RowsAffected() (int64, error) { return 0, nil }
 
-func (m *mockPool) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, error) {
-	return mockResult{}, nil
+func newMockPool(t *testing.T) *mocks.Pool {
+	t.Helper()
+
+	p := mocks.NewPool(t)
+	p.EXPECT().PingContext(mock.Anything).Return(nil).Maybe()
+	p.EXPECT().ExecContext(mock.Anything, mock.Anything, mock.Anything).Return(testSQLResult{}, nil).Maybe()
+	p.EXPECT().SelectContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	p.EXPECT().GetContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	p.EXPECT().QueryContext(mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+	p.EXPECT().QueryRowContext(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	return p
 }
 
-func (m *mockPool) SelectContext(_ context.Context, _ any, _ string, _ ...any) error { return nil }
-func (m *mockPool) GetContext(_ context.Context, _ any, _ string, _ ...any) error    { return nil }
+func newMockHandler(t *testing.T) *mocks.TaskHandler {
+	t.Helper()
 
-func (m *mockPool) QueryContext(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
-	return nil, nil //nolint:nilnil
+	h := mocks.NewTaskHandler(t)
+	h.EXPECT().Handle(mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	return h
 }
-
-func (m *mockPool) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Row { return nil }
-
-// mockResult implements sql.Result for testing.
-type mockResult struct{}
-
-func (r mockResult) LastInsertId() (int64, error) { return 0, nil }
-func (r mockResult) RowsAffected() (int64, error) { return 0, nil }
-
-// noopHandler implements TaskHandler with a no-op Handle method.
-type noopHandler struct{}
-
-func (h *noopHandler) Handle(_ context.Context, _ *asynqpg.TaskInfo) error { return nil }
 
 func newTestConsumer(t *testing.T) *Consumer {
 	t.Helper()
 
+	p := newMockPool(t)
+
 	c, err := New(Config{
-		Pool:               &mockPool{},
+		Pool:               p,
 		DisableMaintenance: true,
 	})
 	require.NoError(t, err)
@@ -66,7 +67,7 @@ func TestNew_DefaultRetryPolicy(t *testing.T) {
 	t.Parallel()
 
 	c, err := New(Config{
-		Pool:               &mockPool{},
+		Pool:               newMockPool(t),
 		DisableMaintenance: true,
 	})
 
@@ -79,7 +80,7 @@ func TestRegisterTaskHandler_Success(t *testing.T) {
 
 	c := newTestConsumer(t)
 
-	err := c.RegisterTaskHandler("test:task", &noopHandler{})
+	err := c.RegisterTaskHandler("test:task", newMockHandler(t))
 
 	assert.NoError(t, err)
 }
@@ -88,9 +89,9 @@ func TestRegisterTaskHandler_Duplicate(t *testing.T) {
 	t.Parallel()
 
 	c := newTestConsumer(t)
-	_ = c.RegisterTaskHandler("test:task", &noopHandler{})
+	_ = c.RegisterTaskHandler("test:task", newMockHandler(t))
 
-	err := c.RegisterTaskHandler("test:task", &noopHandler{})
+	err := c.RegisterTaskHandler("test:task", newMockHandler(t))
 
 	assert.ErrorIs(t, err, ErrTaskHandlerAlreadyRegistered)
 }
@@ -99,12 +100,12 @@ func TestRegisterTaskHandler_AfterStart(t *testing.T) {
 	t.Parallel()
 
 	c := newTestConsumer(t)
-	_ = c.RegisterTaskHandler("test:task", &noopHandler{})
+	_ = c.RegisterTaskHandler("test:task", newMockHandler(t))
 	err := c.Start()
 	require.NoError(t, err)
 	defer func() { _ = c.Stop() }()
 
-	err = c.RegisterTaskHandler("another:task", &noopHandler{})
+	err = c.RegisterTaskHandler("another:task", newMockHandler(t))
 
 	assert.EqualError(t, err, "cannot register handler after consumer is started")
 }
@@ -114,7 +115,7 @@ func TestRegisterTaskHandler_WithOptions(t *testing.T) {
 
 	c := newTestConsumer(t)
 
-	err := c.RegisterTaskHandler("test:task", &noopHandler{},
+	err := c.RegisterTaskHandler("test:task", newMockHandler(t),
 		WithWorkersCount(5),
 		WithMaxAttempts(10),
 		WithTimeout(1*time.Minute),
@@ -140,7 +141,7 @@ func TestStart_AlreadyStarted(t *testing.T) {
 	t.Parallel()
 
 	c := newTestConsumer(t)
-	_ = c.RegisterTaskHandler("test:task", &noopHandler{})
+	_ = c.RegisterTaskHandler("test:task", newMockHandler(t))
 	err := c.Start()
 	require.NoError(t, err)
 	defer func() { _ = c.Stop() }()
@@ -166,7 +167,7 @@ func TestUse_AfterStart(t *testing.T) {
 	t.Parallel()
 
 	c := newTestConsumer(t)
-	_ = c.RegisterTaskHandler("test:task", &noopHandler{})
+	_ = c.RegisterTaskHandler("test:task", newMockHandler(t))
 	err := c.Start()
 	require.NoError(t, err)
 	defer func() { _ = c.Stop() }()

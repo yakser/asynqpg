@@ -92,7 +92,7 @@ func TestRunner_StartStop(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, runner.IsRunning())
 
-		time.Sleep(120 * time.Millisecond)
+		require.Eventually(t, func() bool { return callCount.Load() >= 2 }, 2*time.Second, 10*time.Millisecond)
 
 		runner.Stop()
 		assert.False(t, runner.IsRunning())
@@ -155,13 +155,14 @@ func TestRunner_ContextCancellation(t *testing.T) {
 	err = runner.Start(ctx)
 	require.NoError(t, err)
 
-	time.Sleep(120 * time.Millisecond)
+	require.Eventually(t, func() bool { return callCount.Load() >= 2 }, 2*time.Second, 10*time.Millisecond)
 
 	cancel()
-	time.Sleep(100 * time.Millisecond)
 
-	count := callCount.Load()
-	assert.GreaterOrEqual(t, count, int64(2))
+	// Runner should stop after context cancellation
+	countAfterCancel := callCount.Load()
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, countAfterCancel, callCount.Load(), "expected no more calls after cancel")
 }
 
 func TestRunner_TaskError(t *testing.T) {
@@ -183,7 +184,7 @@ func TestRunner_TaskError(t *testing.T) {
 	err = runner.Start(ctx)
 	require.NoError(t, err)
 
-	time.Sleep(120 * time.Millisecond)
+	require.Eventually(t, func() bool { return callCount.Load() >= 2 }, 2*time.Second, 10*time.Millisecond)
 
 	runner.Stop()
 
@@ -217,17 +218,10 @@ func TestRunner_LongRunningTask(t *testing.T) {
 	err = runner.Start(ctx)
 	require.NoError(t, err)
 
-	// Let it run for enough time to observe the behavior
-	time.Sleep(500 * time.Millisecond)
+	require.Eventually(t, func() bool { return callCount.Load() >= 3 }, 2*time.Second, 10*time.Millisecond)
 
 	runner.Stop()
 
 	count := callCount.Load()
-	// With 50ms interval and 150ms execution time, we expect:
-	// - First execution: 0ms
-	// - Second execution: ~150ms (immediately after first completes)
-	// - Third execution: ~300ms (immediately after second completes)
-	// - Possibly fourth: ~450ms
-	// So we should have at least 3 executions in 500ms
 	assert.GreaterOrEqual(t, count, int64(3), "should execute multiple times despite long execution")
 }

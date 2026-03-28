@@ -7,6 +7,8 @@ import (
 )
 
 // RetryPolicy determines when a failed task should be retried.
+//
+//go:generate go tool mockery --case underscore --with-expecter --name RetryPolicy
 type RetryPolicy interface {
 	// NextRetry returns the duration to wait before the next retry attempt.
 	// attempt is the number of the upcoming attempt (1-indexed).

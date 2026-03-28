@@ -58,6 +58,7 @@ func (c *RescuerConfig) setDefaults() {
 	}
 }
 
+//go:generate go tool mockery --case underscore --with-expecter --exported --name rescuerRepo
 type rescuerRepo interface {
 	GetStuckTasks(ctx context.Context, params repository.GetStuckTasksParams) ([]repository.StuckTask, error)
 	RetryTask(ctx context.Context, params repository.RetryTaskParams) error

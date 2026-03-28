@@ -66,6 +66,7 @@ func (c *CleanerConfig) setDefaults() {
 	}
 }
 
+//go:generate go tool mockery --case underscore --with-expecter --exported --name cleanerRepo
 type cleanerRepo interface {
 	DeleteOldTasks(ctx context.Context, params repository.DeleteOldTasksParams) (int, error)
 }

@@ -35,11 +35,14 @@ const (
 	defaultCancelCheckInterval = 1 * time.Second
 )
 
+//go:generate go tool mockery --case underscore --with-expecter --name TaskHandler
 type TaskHandler interface {
 	Handle(ctx context.Context, task *asynqpg.TaskInfo) error
 }
 
 // Completer defines the interface for task completion operations.
+//
+//go:generate go tool mockery --case underscore --with-expecter --name Completer
 type Completer interface {
 	Start(ctx context.Context) error
 	Stop()
@@ -49,8 +52,11 @@ type Completer interface {
 	Snooze(taskID int64, blockedTill time.Time) error
 }
 
+//go:generate go tool mockery --case underscore --with-expecter --exported --name pool
+type pool = asynqpg.Pool
+
 type Consumer struct {
-	pool        asynqpg.Pool
+	pool        pool
 	repo        *repository.Repository
 	logger      *slog.Logger
 	retryPolicy asynqpg.RetryPolicy

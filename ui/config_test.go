@@ -1,14 +1,26 @@
 package ui
 
 import (
-	"errors"
-	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/yakser/asynqpg/ui/mocks"
 )
+
+func newStubProvider(t *testing.T, id string) *mocks.AuthProvider {
+	t.Helper()
+	p := mocks.NewAuthProvider(t)
+	p.EXPECT().ID().Return(id).Maybe()
+	p.EXPECT().DisplayName().Return(id).Maybe()
+	p.EXPECT().IconURL().Return("").Maybe()
+	p.EXPECT().BeginAuth(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Maybe()
+	p.EXPECT().CompleteAuth(mock.Anything, mock.Anything).Return(nil, nil).Maybe()
+	return p
+}
 
 func TestHandlerOpts_Validate(t *testing.T) {
 	t.Parallel()
@@ -27,7 +39,7 @@ func TestHandlerOpts_Validate(t *testing.T) {
 		t.Parallel()
 
 		opts := HandlerOpts{
-			Pool:      &mockPool{},
+			Pool:      mocks.NewPool(t),
 			BasicAuth: &BasicAuth{Password: "pass"},
 		}
 		err := opts.validate()
@@ -40,7 +52,7 @@ func TestHandlerOpts_Validate(t *testing.T) {
 		t.Parallel()
 
 		opts := HandlerOpts{
-			Pool:      &mockPool{},
+			Pool:      mocks.NewPool(t),
 			BasicAuth: &BasicAuth{Username: "user"},
 		}
 		err := opts.validate()
@@ -53,7 +65,7 @@ func TestHandlerOpts_Validate(t *testing.T) {
 		t.Parallel()
 
 		opts := HandlerOpts{
-			Pool:      &mockPool{},
+			Pool:      mocks.NewPool(t),
 			BasicAuth: &BasicAuth{Username: "admin", Password: "secret"},
 		}
 		err := opts.validate()
@@ -65,7 +77,7 @@ func TestHandlerOpts_Validate(t *testing.T) {
 		t.Parallel()
 
 		opts := HandlerOpts{
-			Pool: &mockPool{},
+			Pool: mocks.NewPool(t),
 		}
 		err := opts.validate()
 
@@ -104,24 +116,13 @@ func TestHandlerOpts_SetDefaults(t *testing.T) {
 	})
 }
 
-// stubProvider is a minimal AuthProvider for config validation tests.
-type stubProvider struct{ id string }
-
-func (s *stubProvider) ID() string                                                   { return s.id }
-func (s *stubProvider) DisplayName() string                                          { return s.id }
-func (s *stubProvider) IconURL() string                                              { return "" }
-func (s *stubProvider) BeginAuth(http.ResponseWriter, *http.Request, string, string) {}
-func (s *stubProvider) CompleteAuth(http.ResponseWriter, *http.Request) (*User, error) {
-	return nil, errors.New("not implemented")
-}
-
 func TestHandlerOpts_Validate_BasicAuthAndOAuthConflict(t *testing.T) {
 	t.Parallel()
 
 	opts := HandlerOpts{
-		Pool:          &mockPool{},
+		Pool:          mocks.NewPool(t),
 		BasicAuth:     &BasicAuth{Username: "admin", Password: "pass"},
-		AuthProviders: []AuthProvider{&stubProvider{id: "github"}},
+		AuthProviders: []AuthProvider{newStubProvider(t, "github")},
 	}
 	err := opts.validate()
 
@@ -133,8 +134,8 @@ func TestHandlerOpts_Validate_AuthProviders_Valid(t *testing.T) {
 	t.Parallel()
 
 	opts := HandlerOpts{
-		Pool:          &mockPool{},
-		AuthProviders: []AuthProvider{&stubProvider{id: "github"}, &stubProvider{id: "google"}},
+		Pool:          mocks.NewPool(t),
+		AuthProviders: []AuthProvider{newStubProvider(t, "github"), newStubProvider(t, "google")},
 	}
 	err := opts.validate()
 
@@ -145,8 +146,8 @@ func TestHandlerOpts_Validate_DuplicateProviderID(t *testing.T) {
 	t.Parallel()
 
 	opts := HandlerOpts{
-		Pool:          &mockPool{},
-		AuthProviders: []AuthProvider{&stubProvider{id: "github"}, &stubProvider{id: "github"}},
+		Pool:          mocks.NewPool(t),
+		AuthProviders: []AuthProvider{newStubProvider(t, "github"), newStubProvider(t, "github")},
 	}
 	err := opts.validate()
 
@@ -158,7 +159,7 @@ func TestHandlerOpts_SetDefaults_SessionStore(t *testing.T) {
 	t.Parallel()
 
 	opts := HandlerOpts{
-		AuthProviders: []AuthProvider{&stubProvider{id: "github"}},
+		AuthProviders: []AuthProvider{newStubProvider(t, "github")},
 	}
 	opts.setDefaults()
 
@@ -175,7 +176,7 @@ func TestHandlerOpts_SetDefaults_SessionMaxAge(t *testing.T) {
 	t.Parallel()
 
 	opts := HandlerOpts{
-		AuthProviders: []AuthProvider{&stubProvider{id: "github"}},
+		AuthProviders: []AuthProvider{newStubProvider(t, "github")},
 	}
 	opts.setDefaults()
 
@@ -204,7 +205,7 @@ func TestHandlerOpts_AuthMode(t *testing.T) {
 
 	t.Run("oauth", func(t *testing.T) {
 		t.Parallel()
-		opts := HandlerOpts{AuthProviders: []AuthProvider{&stubProvider{id: "gh"}}}
+		opts := HandlerOpts{AuthProviders: []AuthProvider{newStubProvider(t, "gh")}}
 		assert.Equal(t, "oauth", opts.authMode())
 	})
 }

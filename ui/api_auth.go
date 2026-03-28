@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/yakser/asynqpg/ui/uiauth"
 )
 
 const (
@@ -127,7 +129,7 @@ func (h *handler) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	session := &Session{
+	session := &uiauth.Session{
 		Token:     token,
 		User:      *user,
 		CreatedAt: now,
