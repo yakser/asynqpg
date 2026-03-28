@@ -736,12 +736,11 @@ func TestTaskLockDuringExecution(t *testing.T) {
 		require.NoError(t, err)
 		defer c2.Stop()
 
-		// Give consumer2 some time to potentially pick up the task (it shouldn't)
-		time.Sleep(100 * time.Millisecond)
-
-		// At this point, only consumer1 should have processed the task
+		// Consumer2 should not pick up the locked task
+		require.Never(t, func() bool {
+			return atomic.LoadInt32(&consumer2Calls) > 0
+		}, 100*time.Millisecond, 10*time.Millisecond, "consumer2 should not process the locked task")
 		assert.Equal(t, int32(1), atomic.LoadInt32(&consumer1Calls), "consumer1 should process the task once")
-		assert.Equal(t, int32(0), atomic.LoadInt32(&consumer2Calls), "consumer2 should not process the locked task")
 
 		// Release the task
 		close(taskCanFinish)

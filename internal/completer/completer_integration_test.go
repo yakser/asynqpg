@@ -18,9 +18,10 @@ import (
 	"github.com/yakser/asynqpg/testutils"
 )
 
-func setupTest(t *testing.T) (*repository.Repository, *completer.BatchCompleter) {
+func setupTest(t *testing.T) (*repository.Repository, *repository.ClientRepository, *completer.BatchCompleter) {
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 
 	cfg := completer.Config{
 		FlushInterval:  50 * time.Millisecond,
@@ -30,7 +31,7 @@ func setupTest(t *testing.T) (*repository.Repository, *completer.BatchCompleter)
 	}
 	bc := completer.NewBatchCompleter(repo, cfg)
 
-	return repo, bc
+	return repo, clientRepo, bc
 }
 
 func createAndFetchTasks(t *testing.T, repo *repository.Repository, count int, taskType string) []int64 {
@@ -67,43 +68,45 @@ func createAndFetchTasks(t *testing.T, repo *repository.Repository, count int, t
 func TestBatchCompleter_Complete_Single(t *testing.T) {
 	t.Parallel()
 
-	repo, bc := setupTest(t)
+	repo, clientRepo, bc := setupTest(t)
 	ctx := context.Background()
 
 	ids := createAndFetchTasks(t, repo, 1, "complete-single-test")
 
-	err := bc.Start(ctx)
+	require.NoError(t, bc.Start(ctx))
+
+	require.NoError(t, bc.Complete(ids[0]))
+
+	bc.Stop()
+
+	task, err := clientRepo.GetTaskByID(ctx, ids[0])
 	require.NoError(t, err)
-	defer bc.Stop()
-
-	err = bc.Complete(ids[0])
-	require.NoError(t, err)
-
-	// Wait for flush
-	time.Sleep(100 * time.Millisecond)
-
-	// Task completion verified by no errors during batch execution
+	assert.Equal(t, "completed", task.Status)
+	assert.NotNil(t, task.FinalizedAt)
 }
 
 func TestBatchCompleter_Complete_Multiple(t *testing.T) {
 	t.Parallel()
 
-	repo, bc := setupTest(t)
+	repo, clientRepo, bc := setupTest(t)
 	ctx := context.Background()
 
 	ids := createAndFetchTasks(t, repo, 5, "complete-multiple-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
-	defer bc.Stop()
+	require.NoError(t, bc.Start(ctx))
 
 	for _, id := range ids {
-		err = bc.Complete(id)
-		require.NoError(t, err)
+		require.NoError(t, bc.Complete(id))
 	}
 
-	// Wait for flush
-	time.Sleep(100 * time.Millisecond)
+	bc.Stop()
+
+	for _, id := range ids {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "completed", task.Status)
+		assert.NotNil(t, task.FinalizedAt)
+	}
 }
 
 func TestBatchCompleter_Complete_FlushOnThreshold(t *testing.T) {
@@ -111,11 +114,12 @@ func TestBatchCompleter_Complete_FlushOnThreshold(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 	ctx := context.Background()
 
 	cfg := completer.Config{
-		FlushInterval:  10 * time.Second, // Long interval
-		FlushThreshold: 5,                // Low threshold
+		FlushInterval:  10 * time.Second, // Long interval -- threshold should trigger flush
+		FlushThreshold: 5,
 		MaxBatchSize:   100,
 		MaxBacklog:     50,
 	}
@@ -123,18 +127,24 @@ func TestBatchCompleter_Complete_FlushOnThreshold(t *testing.T) {
 
 	ids := createAndFetchTasks(t, repo, 5, "threshold-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
+	require.NoError(t, bc.Start(ctx))
 	defer bc.Stop()
 
-	// Add tasks to trigger threshold
 	for _, id := range ids {
-		err = bc.Complete(id)
-		require.NoError(t, err)
+		require.NoError(t, bc.Complete(id))
 	}
 
-	// Threshold reached, should flush soon even without interval
-	time.Sleep(100 * time.Millisecond)
+	// Threshold reached -- flush should happen without waiting for the 10s interval
+	require.Eventually(t, func() bool {
+		task, _ := clientRepo.GetTaskByID(ctx, ids[0])
+		return task != nil && task.Status == "completed"
+	}, 2*time.Second, 10*time.Millisecond)
+
+	for _, id := range ids {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "completed", task.Status)
+	}
 }
 
 func TestBatchCompleter_Complete_FlushOnInterval(t *testing.T) {
@@ -142,11 +152,12 @@ func TestBatchCompleter_Complete_FlushOnInterval(t *testing.T) {
 
 	database := testutils.SetupTestDatabase(t)
 	repo := repository.NewRepository(database)
+	clientRepo := repository.NewClientRepository(database)
 	ctx := context.Background()
 
 	cfg := completer.Config{
 		FlushInterval:  50 * time.Millisecond,
-		FlushThreshold: 1000, // High threshold
+		FlushThreshold: 1000, // High threshold -- interval should trigger flush
 		MaxBatchSize:   100,
 		MaxBacklog:     50,
 	}
@@ -154,123 +165,161 @@ func TestBatchCompleter_Complete_FlushOnInterval(t *testing.T) {
 
 	ids := createAndFetchTasks(t, repo, 2, "interval-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
+	require.NoError(t, bc.Start(ctx))
 	defer bc.Stop()
 
 	for _, id := range ids {
-		err = bc.Complete(id)
-		require.NoError(t, err)
+		require.NoError(t, bc.Complete(id))
 	}
 
-	// Wait for interval flush
-	time.Sleep(100 * time.Millisecond)
+	// Interval flush should complete tasks within a few ticks
+	require.Eventually(t, func() bool {
+		task, _ := clientRepo.GetTaskByID(ctx, ids[0])
+		return task != nil && task.Status == "completed"
+	}, 2*time.Second, 10*time.Millisecond)
+
+	for _, id := range ids {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "completed", task.Status)
+	}
 }
 
 func TestBatchCompleter_Fail_Basic(t *testing.T) {
 	t.Parallel()
 
-	repo, bc := setupTest(t)
+	repo, clientRepo, bc := setupTest(t)
 	ctx := context.Background()
 
 	ids := createAndFetchTasks(t, repo, 3, "fail-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
-	defer bc.Stop()
+	require.NoError(t, bc.Start(ctx))
 
 	for i, id := range ids {
-		err = bc.Fail(id, "error message "+string(rune('A'+i)))
-		require.NoError(t, err)
+		require.NoError(t, bc.Fail(id, "error message "+string(rune('A'+i))))
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	bc.Stop()
+
+	for i, id := range ids {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "failed", task.Status)
+		assert.NotNil(t, task.FinalizedAt)
+		assert.Contains(t, []string(task.Messages), "error message "+string(rune('A'+i)))
+	}
 }
 
 func TestBatchCompleter_Retry_Basic(t *testing.T) {
 	t.Parallel()
 
-	repo, bc := setupTest(t)
+	repo, clientRepo, bc := setupTest(t)
 	ctx := context.Background()
 
 	ids := createAndFetchTasks(t, repo, 3, "retry-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
-	defer bc.Stop()
+	require.NoError(t, bc.Start(ctx))
 
+	blockedTills := make([]time.Time, len(ids))
 	for i, id := range ids {
-		blockedTill := time.Now().Add(time.Duration(i+1) * time.Second)
-		err = bc.Retry(id, blockedTill, "retry reason")
-		require.NoError(t, err)
+		blockedTills[i] = time.Now().Add(time.Duration(i+1) * time.Second)
+		require.NoError(t, bc.Retry(id, blockedTills[i], "retry reason"))
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	bc.Stop()
+
+	for i, id := range ids {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "pending", task.Status)
+		assert.Nil(t, task.FinalizedAt)
+		assert.Equal(t, 2, task.AttemptsLeft)
+		assert.Equal(t, 1, task.AttemptsElapsed)
+		assert.Contains(t, []string(task.Messages), "retry reason")
+		assert.WithinDuration(t, blockedTills[i], task.BlockedTill, time.Second)
+	}
 }
 
 func TestBatchCompleter_MixedOperations(t *testing.T) {
 	t.Parallel()
 
-	repo, bc := setupTest(t)
+	repo, clientRepo, bc := setupTest(t)
 	ctx := context.Background()
 
 	ids := createAndFetchTasks(t, repo, 6, "mixed-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
-	defer bc.Stop()
+	require.NoError(t, bc.Start(ctx))
 
 	// Complete first 2
-	err = bc.Complete(ids[0])
-	require.NoError(t, err)
-	err = bc.Complete(ids[1])
-	require.NoError(t, err)
+	require.NoError(t, bc.Complete(ids[0]))
+	require.NoError(t, bc.Complete(ids[1]))
 
 	// Fail next 2
-	err = bc.Fail(ids[2], "error 1")
-	require.NoError(t, err)
-	err = bc.Fail(ids[3], "error 2")
-	require.NoError(t, err)
+	require.NoError(t, bc.Fail(ids[2], "error 1"))
+	require.NoError(t, bc.Fail(ids[3], "error 2"))
 
 	// Retry last 2
-	err = bc.Retry(ids[4], time.Now().Add(time.Second), "retry 1")
-	require.NoError(t, err)
-	err = bc.Retry(ids[5], time.Now().Add(time.Second), "retry 2")
-	require.NoError(t, err)
+	retryTime := time.Now().Add(time.Second)
+	require.NoError(t, bc.Retry(ids[4], retryTime, "retry 1"))
+	require.NoError(t, bc.Retry(ids[5], retryTime, "retry 2"))
 
-	time.Sleep(100 * time.Millisecond)
+	bc.Stop()
+
+	// Verify completed
+	for _, id := range ids[:2] {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "completed", task.Status)
+	}
+
+	// Verify failed
+	for _, id := range ids[2:4] {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "failed", task.Status)
+	}
+
+	// Verify retried
+	for _, id := range ids[4:6] {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "pending", task.Status)
+		assert.Equal(t, 2, task.AttemptsLeft)
+		assert.Equal(t, 1, task.AttemptsElapsed)
+	}
 }
 
 func TestBatchCompleter_GracefulShutdown(t *testing.T) {
 	t.Parallel()
 
-	repo, bc := setupTest(t)
+	repo, clientRepo, bc := setupTest(t)
 	ctx := context.Background()
 
 	ids := createAndFetchTasks(t, repo, 3, "shutdown-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
+	require.NoError(t, bc.Start(ctx))
 
 	for _, id := range ids {
-		err = bc.Complete(id)
-		require.NoError(t, err)
+		require.NoError(t, bc.Complete(id))
 	}
 
-	// Stop immediately - should flush pending
+	// Stop immediately -- should flush pending operations before returning
 	bc.Stop()
 
-	// All tasks should be completed after stop
+	for _, id := range ids {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "completed", task.Status)
+	}
 }
 
 func TestBatchCompleter_GracefulShutdown_Empty(t *testing.T) {
 	t.Parallel()
 
-	_, bc := setupTest(t)
+	_, _, bc := setupTest(t)
 	ctx := context.Background()
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
+	require.NoError(t, bc.Start(ctx))
 
 	start := time.Now()
 	bc.Stop()
@@ -297,8 +346,7 @@ func TestBatchCompleter_Backpressure_Block(t *testing.T) {
 
 	ids := createAndFetchTasks(t, repo, 10, "backpressure-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
+	require.NoError(t, bc.Start(ctx))
 	defer bc.Stop()
 
 	var blocked atomic.Bool
@@ -315,23 +363,20 @@ func TestBatchCompleter_Backpressure_Block(t *testing.T) {
 		}
 	}()
 
-	// Give some time for the goroutine to hit backpressure
-	time.Sleep(50 * time.Millisecond)
 	// The goroutine should be blocked after 5 operations
-	assert.True(t, blocked.Load(), "should have reached backpressure point")
+	assert.Eventually(t, blocked.Load, 2*time.Second, 10*time.Millisecond, "should have reached backpressure point")
 }
 
 func TestBatchCompleter_DoubleStart(t *testing.T) {
 	t.Parallel()
 
-	_, bc := setupTest(t)
+	_, _, bc := setupTest(t)
 	ctx := context.Background()
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
+	require.NoError(t, bc.Start(ctx))
 	defer bc.Stop()
 
-	err = bc.Start(ctx)
+	err := bc.Start(ctx)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already running")
 }
@@ -339,7 +384,7 @@ func TestBatchCompleter_DoubleStart(t *testing.T) {
 func TestBatchCompleter_StopWithoutStart(t *testing.T) {
 	t.Parallel()
 
-	_, bc := setupTest(t)
+	_, _, bc := setupTest(t)
 
 	// Should not panic
 	bc.Stop()
@@ -348,37 +393,36 @@ func TestBatchCompleter_StopWithoutStart(t *testing.T) {
 func TestBatchCompleter_SameTaskMultipleOperations(t *testing.T) {
 	t.Parallel()
 
-	repo, bc := setupTest(t)
+	repo, clientRepo, bc := setupTest(t)
 	ctx := context.Background()
 
 	ids := createAndFetchTasks(t, repo, 1, "same-task-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
-	defer bc.Stop()
+	require.NoError(t, bc.Start(ctx))
 
-	// Same task ID, different operations - last one wins
-	err = bc.Retry(ids[0], time.Now().Add(time.Second), "retry")
-	require.NoError(t, err)
-	err = bc.Fail(ids[0], "fail")
-	require.NoError(t, err)
-	err = bc.Complete(ids[0])
-	require.NoError(t, err)
+	// Same task ID, different operations -- each type uses a separate map.
+	// All three UPDATEs require status='running', so only the first to execute
+	// will match; the others will affect 0 rows.
+	require.NoError(t, bc.Retry(ids[0], time.Now().Add(time.Second), "retry"))
+	require.NoError(t, bc.Fail(ids[0], "fail"))
+	require.NoError(t, bc.Complete(ids[0]))
 
-	time.Sleep(100 * time.Millisecond)
+	bc.Stop()
+
+	task, err := clientRepo.GetTaskByID(ctx, ids[0])
+	require.NoError(t, err)
+	assert.NotEqual(t, "running", task.Status, "task should have been transitioned from running")
 }
 
 func TestBatchCompleter_ConcurrentOperations(t *testing.T) {
 	t.Parallel()
 
-	repo, bc := setupTest(t)
+	repo, clientRepo, bc := setupTest(t)
 	ctx := context.Background()
 
 	ids := createAndFetchTasks(t, repo, 20, "concurrent-test")
 
-	err := bc.Start(ctx)
-	require.NoError(t, err)
-	defer bc.Stop()
+	require.NoError(t, bc.Start(ctx))
 
 	var wg sync.WaitGroup
 	for _, id := range ids {
@@ -390,5 +434,11 @@ func TestBatchCompleter_ConcurrentOperations(t *testing.T) {
 	}
 
 	wg.Wait()
-	time.Sleep(100 * time.Millisecond)
+	bc.Stop()
+
+	for _, id := range ids {
+		task, err := clientRepo.GetTaskByID(ctx, id)
+		require.NoError(t, err)
+		assert.Equal(t, "completed", task.Status)
+	}
 }

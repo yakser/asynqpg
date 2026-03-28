@@ -119,9 +119,7 @@ func TestElector_Start_Success(t *testing.T) {
 	require.NoError(t, e.Start(ctx))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
-
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_Start_Idempotent(t *testing.T) {
@@ -191,8 +189,7 @@ func TestElector_Stop_ResignsLeadership(t *testing.T) {
 
 	require.NoError(t, e.Start(context.Background()))
 
-	time.Sleep(100 * time.Millisecond)
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	e.Stop()
 
@@ -224,9 +221,7 @@ func TestElector_ElectsLeader_RowsAffected1(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
-
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_NotElected_RowsAffected0(t *testing.T) {
@@ -242,9 +237,7 @@ func TestElector_NotElected_RowsAffected0(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
-
-	require.False(t, e.IsLeader())
+	require.Eventually(t, func() bool { return !e.IsLeader() }, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_LosesLeadership(t *testing.T) {
@@ -277,12 +270,10 @@ func TestElector_LosesLeadership(t *testing.T) {
 	defer e.Stop()
 
 	// Wait for first election
-	time.Sleep(30 * time.Millisecond)
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	// Wait for second election
-	time.Sleep(80 * time.Millisecond)
-	require.False(t, e.IsLeader())
+	require.Eventually(t, func() bool { return !e.IsLeader() }, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_MaintainsLeadership(t *testing.T) {
@@ -298,11 +289,10 @@ func TestElector_MaintainsLeadership(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(30 * time.Millisecond)
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	// Wait for re-election
-	time.Sleep(80 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	require.True(t, e.IsLeader())
 }
 
@@ -336,12 +326,10 @@ func TestElector_ErrorAssumedLostLeadership(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(30 * time.Millisecond)
-	require.True(t, e.IsLeader())
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	// Wait for error attempt
-	time.Sleep(80 * time.Millisecond)
-	require.False(t, e.IsLeader())
+	require.Eventually(t, func() bool { return !e.IsLeader() }, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_RowsAffectedError(t *testing.T) {
@@ -364,8 +352,7 @@ func TestElector_RowsAffectedError(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
-	require.False(t, e.IsLeader())
+	require.Eventually(t, func() bool { return !e.IsLeader() }, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestElector_DeletesExpiredLeaders(t *testing.T) {
@@ -402,7 +389,11 @@ func TestElector_DeletesExpiredLeaders(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return capturedName != ""
+	}, 2*time.Second, 10*time.Millisecond)
 
 	mu.Lock()
 	require.Equal(t, testElectorGroup, capturedName)
@@ -442,7 +433,11 @@ func TestElector_ElectionSQL_InsertOnConflict(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 	defer e.Stop()
 
-	time.Sleep(100 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(capturedInsertArgs) > 0
+	}, 2*time.Second, 10*time.Millisecond)
 
 	mu.Lock()
 	require.Len(t, capturedInsertArgs, 4, "insert: expected 4 args (name, client_id, now, expires_at)")
@@ -589,7 +584,7 @@ func TestElector_Subscribe_FullChannel(t *testing.T) {
 	require.NoError(t, e.Start(context.Background()))
 
 	// Wait for election -- should not deadlock
-	time.Sleep(100 * time.Millisecond)
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 	e.Stop()
 
 	// We should still be able to read at least the initial value
@@ -614,7 +609,7 @@ func TestElector_ElectionLoop_ContextCancellation(t *testing.T) {
 
 	require.NoError(t, e.Start(ctx))
 
-	time.Sleep(30 * time.Millisecond)
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 	cancel()
 
 	// Stop should complete quickly since context is already cancelled
@@ -658,7 +653,7 @@ func TestElector_Resign_DBError(t *testing.T) {
 
 	require.NoError(t, e.Start(context.Background()))
 
-	time.Sleep(30 * time.Millisecond)
+	require.Eventually(t, e.IsLeader, 2*time.Second, 10*time.Millisecond)
 
 	// Stop should not panic even if resign fails
 	e.Stop()

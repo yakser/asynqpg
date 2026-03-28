@@ -15,23 +15,36 @@ import (
 	"github.com/yakser/asynqpg/internal/repository"
 )
 
-func setupAllMethods(repo *mocks.CompleterRepo) {
+type flushCounters struct {
+	complete atomic.Int64
+	fail     atomic.Int64
+	retry    atomic.Int64
+	snooze   atomic.Int64
+}
+
+func setupAllMethods(repo *mocks.CompleterRepo) *flushCounters {
+	c := &flushCounters{}
 	repo.EXPECT().CompleteTasksMany(mock.Anything, mock.Anything).
 		RunAndReturn(func(_ context.Context, params repository.CompleteTasksManyParams) (int, error) {
+			c.complete.Add(int64(len(params.IDs)))
 			return len(params.IDs), nil
 		}).Maybe()
 	repo.EXPECT().FailTasksMany(mock.Anything, mock.Anything).
 		RunAndReturn(func(_ context.Context, params repository.FailTasksManyParams) (int, error) {
+			c.fail.Add(int64(len(params.IDs)))
 			return len(params.IDs), nil
 		}).Maybe()
 	repo.EXPECT().RetryTasksMany(mock.Anything, mock.Anything).
 		RunAndReturn(func(_ context.Context, params repository.RetryTasksManyParams) (int, error) {
+			c.retry.Add(int64(len(params.IDs)))
 			return len(params.IDs), nil
 		}).Maybe()
 	repo.EXPECT().SnoozeTasksMany(mock.Anything, mock.Anything).
 		RunAndReturn(func(_ context.Context, params repository.SnoozeTasksManyParams) (int, error) {
+			c.snooze.Add(int64(len(params.IDs)))
 			return len(params.IDs), nil
 		}).Maybe()
+	return c
 }
 
 func newTestCompleter(repo *mocks.CompleterRepo, cfg Config) *BatchCompleter {
@@ -74,6 +87,15 @@ func countCallIDs(repo *mocks.CompleterRepo, method string) int {
 	return total
 }
 
+func hasCall(repo *mocks.CompleterRepo, method string) bool {
+	for _, call := range repo.Calls {
+		if call.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
 func TestUnit_DefaultConfig(t *testing.T) {
 	t.Parallel()
 
@@ -88,7 +110,7 @@ func TestUnit_Complete_FlushesOnInterval(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	counters := setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
 	ctx := context.Background()
@@ -97,7 +119,9 @@ func TestUnit_Complete_FlushesOnInterval(t *testing.T) {
 	require.NoError(t, bc.Complete(1))
 	require.NoError(t, bc.Complete(2))
 
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return counters.complete.Load() >= 2
+	}, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
 	totalIDs := countCallIDs(repo, "CompleteTasksMany")
@@ -108,14 +132,14 @@ func TestUnit_Fail_FlushesOnInterval(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	counters := setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
 	require.NoError(t, bc.Start(context.Background()))
 
 	require.NoError(t, bc.Fail(10, "error msg"))
 
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool { return counters.fail.Load() > 0 }, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
 	var failCalls []repository.FailTasksManyParams
@@ -134,7 +158,7 @@ func TestUnit_Retry_FlushesOnInterval(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	counters := setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
 	require.NoError(t, bc.Start(context.Background()))
@@ -142,7 +166,7 @@ func TestUnit_Retry_FlushesOnInterval(t *testing.T) {
 	bt := time.Now().Add(5 * time.Second)
 	require.NoError(t, bc.Retry(20, bt, "retry reason"))
 
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool { return counters.retry.Load() > 0 }, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
 	var retryCalls []repository.RetryTasksManyParams
@@ -161,7 +185,7 @@ func TestUnit_MixedOps_AllFlushed(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	counters := setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
 	require.NoError(t, bc.Start(context.Background()))
@@ -170,12 +194,14 @@ func TestUnit_MixedOps_AllFlushed(t *testing.T) {
 	_ = bc.Fail(2, "fail msg")
 	_ = bc.Retry(3, time.Now().Add(time.Second), "retry msg")
 
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return counters.complete.Load() > 0 && counters.fail.Load() > 0 && counters.retry.Load() > 0
+	}, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
-	require.Greater(t, countCallIDs(repo, "CompleteTasksMany"), 0)
-	require.Greater(t, countCallIDs(repo, "FailTasksMany"), 0)
-	require.Greater(t, countCallIDs(repo, "RetryTasksMany"), 0)
+	require.Greater(t, counters.complete.Load(), int64(0))
+	require.Greater(t, counters.fail.Load(), int64(0))
+	require.Greater(t, counters.retry.Load(), int64(0))
 }
 
 func TestUnit_FlushOnThreshold(t *testing.T) {
@@ -212,8 +238,9 @@ func TestUnit_FlushOnThreshold(t *testing.T) {
 	_ = bc.Complete(2)
 	_ = bc.Complete(3) // threshold reached
 
-	// Wait for next tick to flush
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return completeCount.Load() > 0
+	}, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
 	require.NotZero(t, completeCount.Load(), "expected flush after threshold reached")
@@ -235,20 +262,18 @@ func TestUnit_EmptyFlush_Skipped(t *testing.T) {
 
 	require.NoError(t, bc.Start(context.Background()))
 
-	// Wait for several flush intervals with nothing pending
-	time.Sleep(200 * time.Millisecond)
+	// Verify no flush calls happen with nothing pending
+	require.Never(t, func() bool {
+		return hasCall(repo, "CompleteTasksMany") || hasCall(repo, "FailTasksMany") || hasCall(repo, "RetryTasksMany")
+	}, 200*time.Millisecond, 10*time.Millisecond)
 	bc.Stop()
-
-	repo.AssertNotCalled(t, "CompleteTasksMany")
-	repo.AssertNotCalled(t, "FailTasksMany")
-	repo.AssertNotCalled(t, "RetryTasksMany")
 }
 
 func TestUnit_GracefulShutdown_Flushes(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	_ = setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{
 		FlushInterval: 10 * time.Second, // long -- won't trigger before stop
 	})
@@ -271,7 +296,7 @@ func TestUnit_DoubleStart_Error(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	_ = setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{})
 
 	require.NoError(t, bc.Start(context.Background()))
@@ -293,9 +318,14 @@ func TestUnit_StopWithoutStart_Safe(t *testing.T) {
 func TestUnit_WithRetries_RepoError_Logged(t *testing.T) {
 	t.Parallel()
 
+	var completeCallCount atomic.Int64
+
 	repo := mocks.NewCompleterRepo(t)
 	repo.EXPECT().CompleteTasksMany(mock.Anything, mock.Anything).
-		Return(0, errors.New("db connection lost")).Maybe()
+		RunAndReturn(func(_ context.Context, _ repository.CompleteTasksManyParams) (int, error) {
+			completeCallCount.Add(1)
+			return 0, errors.New("db connection lost")
+		}).Maybe()
 	repo.EXPECT().FailTasksMany(mock.Anything, mock.Anything).
 		RunAndReturn(func(_ context.Context, params repository.FailTasksManyParams) (int, error) {
 			return len(params.IDs), nil
@@ -317,28 +347,17 @@ func TestUnit_WithRetries_RepoError_Logged(t *testing.T) {
 
 	_ = bc.Complete(1)
 
-	// Wait for flush + retries (withRetries does 3 attempts with 2s,4s,8s sleep)
-	// But context isn't cancelled, so we need to wait or just verify the first attempt.
-	// Actually the retries have exponential backoff (2s, 4s, 8s), which is too long.
-	// The completer logs error but doesn't fail. Let's just verify it called repo.
-	time.Sleep(200 * time.Millisecond)
+	require.Eventually(t, func() bool { return completeCallCount.Load() >= 1 }, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
-	// At least 1 attempt should be made
-	callCount := 0
-	for _, call := range repo.Calls {
-		if call.Method == "CompleteTasksMany" {
-			callCount++
-		}
-	}
-	require.GreaterOrEqual(t, callCount, 1)
+	require.GreaterOrEqual(t, completeCallCount.Load(), int64(1))
 }
 
 func TestUnit_Backpressure(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	_ = setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{
 		FlushInterval:  10 * time.Second,
 		FlushThreshold: 1000,
@@ -363,15 +382,14 @@ func TestUnit_Backpressure(t *testing.T) {
 	}()
 
 	// Should be blocked after 5 items
-	time.Sleep(100 * time.Millisecond)
-	require.True(t, blocked.Load(), "expected goroutine to reach backpressure point")
+	require.Eventually(t, blocked.Load, 2*time.Second, 10*time.Millisecond, "expected goroutine to reach backpressure point")
 }
 
 func TestUnit_SameTask_LastWins(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	counters := setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
 	require.NoError(t, bc.Start(context.Background()))
@@ -382,20 +400,21 @@ func TestUnit_SameTask_LastWins(t *testing.T) {
 	_ = bc.Complete(42)
 
 	// Wait for flush
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return counters.complete.Load() > 0 && counters.fail.Load() > 0 && counters.retry.Load() > 0
+	}, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
-	// All three maps track independently, so all 3 operations should be present
-	require.Greater(t, countCallIDs(repo, "CompleteTasksMany"), 0)
-	require.Greater(t, countCallIDs(repo, "FailTasksMany"), 0)
-	require.Greater(t, countCallIDs(repo, "RetryTasksMany"), 0)
+	require.Greater(t, counters.complete.Load(), int64(0))
+	require.Greater(t, counters.fail.Load(), int64(0))
+	require.Greater(t, counters.retry.Load(), int64(0))
 }
 
 func TestUnit_Snooze_FlushesOnInterval(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	counters := setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
 	require.NoError(t, bc.Start(context.Background()))
@@ -406,7 +425,7 @@ func TestUnit_Snooze_FlushesOnInterval(t *testing.T) {
 	require.NoError(t, bc.Snooze(1, snoozeTime1))
 	require.NoError(t, bc.Snooze(2, snoozeTime2))
 
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool { return counters.snooze.Load() > 0 }, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
 	var snoozeCalls []repository.SnoozeTasksManyParams
@@ -431,7 +450,7 @@ func TestUnit_Snooze_MixedWithComplete(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	counters := setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
 	require.NoError(t, bc.Start(context.Background()))
@@ -440,7 +459,9 @@ func TestUnit_Snooze_MixedWithComplete(t *testing.T) {
 	require.NoError(t, bc.Snooze(2, time.Now().Add(5*time.Minute)))
 	require.NoError(t, bc.Complete(3))
 
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return counters.complete.Load() > 0 && counters.snooze.Load() > 0
+	}, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
 	completeTotalIDs := countCallIDs(repo, "CompleteTasksMany")
@@ -454,7 +475,7 @@ func TestUnit_ConcurrentOperations(t *testing.T) {
 	t.Parallel()
 
 	repo := mocks.NewCompleterRepo(t)
-	setupAllMethods(repo)
+	counters := setupAllMethods(repo)
 	bc := newTestCompleter(repo, Config{FlushInterval: 50 * time.Millisecond})
 
 	require.NoError(t, bc.Start(context.Background()))
@@ -469,7 +490,9 @@ func TestUnit_ConcurrentOperations(t *testing.T) {
 	}
 
 	wg.Wait()
-	time.Sleep(150 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return counters.complete.Load() >= 20
+	}, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
 	// All 20 tasks should have been flushed (some may be in same call due to map dedup)

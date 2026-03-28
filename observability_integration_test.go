@@ -204,12 +204,13 @@ func TestObservability_ProcessMetricsAndTracing(t *testing.T) {
 		t.Fatal("task not processed within timeout")
 	}
 
-	// Give metrics time to be recorded
-	time.Sleep(100 * time.Millisecond)
-
+	// Wait for metrics to be recorded
 	var rm metricdata.ResourceMetrics
-	err = reader.Collect(context.Background(), &rm)
-	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		rm = metricdata.ResourceMetrics{}
+		_ = reader.Collect(context.Background(), &rm)
+		return findCounterValue(t, rm, "asynqpg.tasks.processed") >= 1
+	}, 2*time.Second, 10*time.Millisecond)
 
 	processedCount := findCounterValue(t, rm, "asynqpg.tasks.processed")
 	assert.Equal(t, int64(1), processedCount)

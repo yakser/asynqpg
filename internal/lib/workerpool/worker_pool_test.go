@@ -9,19 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func waitUntil(t *testing.T, cond func() bool, timeout time.Duration) {
-	t.Helper()
-
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("condition not met within %s", timeout)
-}
-
 func TestWorkerPoolExecutesAllTasks(t *testing.T) {
 	t.Parallel()
 
@@ -213,15 +200,15 @@ func TestWorkerPoolFreeWorkers(t *testing.T) {
 		}
 	}
 
-	waitUntil(t, func() bool {
+	require.Eventually(t, func() bool {
 		return pool.FreeWorkers() == 0
-	}, 500*time.Millisecond)
+	}, 500*time.Millisecond, 10*time.Millisecond)
 
 	close(release)
 
-	waitUntil(t, func() bool {
+	require.Eventually(t, func() bool {
 		return pool.FreeWorkers() == 3
-	}, 2*time.Second)
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestWorkerPool_ResizeToZero(t *testing.T) {
@@ -232,9 +219,9 @@ func TestWorkerPool_ResizeToZero(t *testing.T) {
 
 	pool.Resize(0)
 
-	waitUntil(t, func() bool {
+	require.Eventually(t, func() bool {
 		return pool.FreeWorkers() == 0
-	}, 500*time.Millisecond)
+	}, 500*time.Millisecond, 10*time.Millisecond)
 }
 
 func TestWorkerPool_ResizeNegative(t *testing.T) {
@@ -245,9 +232,9 @@ func TestWorkerPool_ResizeNegative(t *testing.T) {
 
 	pool.Resize(-1)
 
-	waitUntil(t, func() bool {
+	require.Eventually(t, func() bool {
 		return pool.FreeWorkers() == 0
-	}, 500*time.Millisecond)
+	}, 500*time.Millisecond, 10*time.Millisecond)
 }
 
 func TestWorkerPool_SubmitNilTask(t *testing.T) {

@@ -473,28 +473,31 @@ func TestMaintainer_Start_StartsAllServices(t *testing.T) {
 	require.NoError(t, m.Start(context.Background()))
 	defer m.Stop()
 
-	// Wait for goroutines to start services
-	time.Sleep(50 * time.Millisecond)
-
-	require.True(t, started1.Load())
-	require.True(t, started2.Load())
+	require.Eventually(t, func() bool {
+		return started1.Load() && started2.Load()
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 func TestMaintainer_Stop_StopsAllServices(t *testing.T) {
 	t.Parallel()
 
 	var stopped1, stopped2 atomic.Bool
+	var started1, started2 atomic.Bool
 
 	svc1 := mocks.NewService(t)
 	svc1.EXPECT().Name().Return("svc1").Maybe()
-	svc1.EXPECT().Start(mock.Anything).Return(nil).Maybe()
+	svc1.EXPECT().Start(mock.Anything).Run(func(_ context.Context) {
+		started1.Store(true)
+	}).Return(nil).Maybe()
 	svc1.EXPECT().Stop().Run(func() {
 		stopped1.Store(true)
 	}).Maybe()
 
 	svc2 := mocks.NewService(t)
 	svc2.EXPECT().Name().Return("svc2").Maybe()
-	svc2.EXPECT().Start(mock.Anything).Return(nil).Maybe()
+	svc2.EXPECT().Start(mock.Anything).Run(func(_ context.Context) {
+		started2.Store(true)
+	}).Return(nil).Maybe()
 	svc2.EXPECT().Stop().Run(func() {
 		stopped2.Store(true)
 	}).Maybe()
@@ -503,7 +506,9 @@ func TestMaintainer_Stop_StopsAllServices(t *testing.T) {
 
 	require.NoError(t, m.Start(context.Background()))
 
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return started1.Load() && started2.Load()
+	}, 2*time.Second, 10*time.Millisecond)
 	m.Stop()
 
 	require.True(t, stopped1.Load())
@@ -578,12 +583,10 @@ func TestMaintainer_ServiceStartError(t *testing.T) {
 
 	require.NoError(t, m.Start(context.Background()))
 
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return started1.Load() && started2.Load()
+	}, 2*time.Second, 10*time.Millisecond)
 	m.Stop()
-
-	// Both services should have been attempted
-	require.True(t, started1.Load())
-	require.True(t, started2.Load())
 }
 
 func TestMaintainer_NoServices(t *testing.T) {
