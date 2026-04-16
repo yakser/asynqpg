@@ -595,12 +595,68 @@ make demo-up   # start PostgreSQL + observability stack
 
 ## Demo
 
-Run the full demo with producers, consumers, web UI, and observability:
+An interactive TUI demo with producers, consumers, web UI, and observability.
+
+### Quick Start
 
 ```bash
-make demo       # start everything
+make demo       # start infra, migrate, run demo
 make demo-down  # stop all services
 ```
+
+Or run steps individually:
+
+```bash
+make demo-up    # start PostgreSQL + observability stack
+make migrate    # apply migrations
+make demo-run   # run the demo app
+```
+
+### CLI Flags
+
+Pass flags via `ARGS`:
+
+```bash
+make demo-run ARGS="--tasks 50 --no-auto --log-level debug"
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--tasks, -n` | `100` | Number of initial tasks to seed |
+| `--no-auto` | `false` | Disable automatic task generation |
+| `--no-logs` | `false` | Hide the log viewport |
+| `--log-level, -l` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+
+### TUI Commands
+
+| Command | Description |
+|---|---|
+| `enqueue <type> [N]` | Enqueue N tasks (types: `email`, `notification`, `report`) |
+| `auto on\|off` | Toggle automatic task generation |
+| `stats` | Show processing statistics |
+| `clear` | Clear log viewport |
+| `help` | Show available commands |
+| `quit` | Graceful shutdown |
+
+Scroll logs with mouse wheel, arrow keys, or PgUp/PgDown. Press Tab to switch focus between input and log viewport.
+
+### Authentication
+
+The demo supports optional authentication for the web UI via environment variables. Create a `.env` file in `examples/demo/` or pass variables directly:
+
+**Basic Auth:**
+
+```bash
+BASIC_AUTH_USER=admin BASIC_AUTH_PASS=secret make demo-run
+```
+
+**GitHub OAuth:**
+
+```bash
+GITHUB_CLIENT_ID=your_id GITHUB_CLIENT_SECRET=your_secret make demo-run
+```
+
+Without these variables, the UI runs without authentication.
 
 ## Performance
 

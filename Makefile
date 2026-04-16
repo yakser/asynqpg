@@ -5,9 +5,8 @@ help: ## Show all commands
 
 .PHONY: migrate
 migrate: ## Apply migrations
-	@echo "Running migrations..."
-	docker exec -i asynqpg-postgres psql -U postgres -d asynqpg < migrations/001_initial.sql
-	@echo "Migrations completed"
+	@docker exec -i asynqpg-postgres psql -U postgres -d asynqpg < migrations/001_initial.sql > /dev/null 2>&1
+	@echo "Migrations applied."
 
 .PHONY: generate
 generate: ## Regenerate all mocks (all modules)
@@ -58,25 +57,22 @@ up: ## Run postgresql in docker
 
 .PHONY: demo-up
 demo-up: ## Start PostgreSQL + observability stack (Jaeger, Prometheus, Grafana, OTel Collector)
-	@echo "Starting PostgreSQL + observability stack..."
-	docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml up -d
+	@echo "Starting infrastructure..."
+	@docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml --env-file examples/demo/.env up -d --quiet-pull 2>/dev/null
 	@echo "Waiting for services to be ready..."
 	@sleep 5
-	@echo "Services started:"
-	@echo "  Jaeger UI:    http://localhost:16686"
-	@echo "  Prometheus:   http://localhost:9090"
-	@echo "  Grafana:      http://localhost:3000"
+	@echo "Infrastructure ready."
 
 .PHONY: demo-down
 demo-down: ## Stop all demo services
-	docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml down
+	docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml --env-file examples/demo/.env down
 
 .PHONY: demo-run
-demo-run: ## Run demo
-	cd examples/demo && go run .
+demo-run: ## Run demo (accepts ARGS, e.g. make demo-run ARGS="--tasks 50 --no-auto")
+	cd examples/demo && go run . $(ARGS)
 
 .PHONY: demo
-demo: demo-up migrate demo-run ## Full demo: start infra, migrate, run example
+demo: demo-up migrate demo-run ## Full demo (accepts ARGS, e.g. make demo ARGS="--tasks 50 --no-auto")
 
 .PHONY: build-frontend
 build-frontend: ## Build frontend SPA (requires Node.js + npm)
