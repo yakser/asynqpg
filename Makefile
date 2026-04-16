@@ -58,14 +58,14 @@ up: ## Run postgresql in docker
 .PHONY: demo-up
 demo-up: ## Start PostgreSQL + observability stack (Jaeger, Prometheus, Grafana, OTel Collector)
 	@echo "Starting infrastructure..."
-	@docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml up -d --quiet-pull 2>/dev/null
+	@docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml --env-file examples/demo/.env up -d --quiet-pull 2>/dev/null
 	@echo "Waiting for services to be ready..."
 	@sleep 5
 	@echo "Infrastructure ready."
 
 .PHONY: demo-down
 demo-down: ## Stop all demo services
-	docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml down
+	docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml --env-file examples/demo/.env down
 
 .PHONY: demo-run
 demo-run: ## Run demo (accepts ARGS, e.g. make demo-run ARGS="--tasks 50 --no-auto")
