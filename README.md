@@ -35,7 +35,7 @@ Distributed task queue for Go, backed by PostgreSQL.
 - **Batch & transactional enqueue** – bulk insert with deduplication, enqueue within your DB transaction
 - **Per-type worker pools** – independent concurrency and timeout settings per task type
 - **Automatic maintenance** – leader election, stuck task rescue, old task cleanup
-- **Web dashboard** – operator UI with overview KPIs, live task list, worker view, maintenance page, command palette (⌘K), keyboard navigation, light/dark themes, and Basic/OAuth auth
+- **Web dashboard** – UI with overview KPIs, live task list, worker view, maintenance page, and Basic/OAuth auth
 - **OpenTelemetry** – built-in metrics and distributed tracing
 
 ## Installation
