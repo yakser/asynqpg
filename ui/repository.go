@@ -126,15 +126,15 @@ const listTasksColumns = `id, type, status, idempotency_token, messages,
 
 // ListTasks returns tasks without payload, including payload_size.
 func (r *repository) ListTasks(ctx context.Context, params ListTasksParams) (*TaskListResult, error) {
-	orderColumn := "id"
+	orderColumn := orderByID
 	switch params.OrderBy {
-	case "created_at", "updated_at", "blocked_till":
+	case orderByCreatedAt, orderByUpdatedAt, orderByBlockedTill:
 		orderColumn = params.OrderBy
 	}
 
-	orderDir := "ASC"
-	if params.OrderDir == "DESC" {
-		orderDir = "DESC"
+	orderDir := orderASC
+	if params.OrderDir == orderDESC {
+		orderDir = orderDESC
 	}
 
 	idempotencyClause := ""

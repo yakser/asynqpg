@@ -40,7 +40,7 @@ func TestHandlerOpts_Validate(t *testing.T) {
 
 		opts := HandlerOpts{
 			Pool:      mocks.NewPool(t),
-			BasicAuth: &BasicAuth{Password: "pass"},
+			BasicAuth: &BasicAuth{Password: testBasicAuthPass},
 		}
 		err := opts.validate()
 
@@ -66,7 +66,7 @@ func TestHandlerOpts_Validate(t *testing.T) {
 
 		opts := HandlerOpts{
 			Pool:      mocks.NewPool(t),
-			BasicAuth: &BasicAuth{Username: "admin", Password: "secret"},
+			BasicAuth: &BasicAuth{Username: testBasicAuthUser, Password: "secret"},
 		}
 		err := opts.validate()
 
@@ -121,8 +121,8 @@ func TestHandlerOpts_Validate_BasicAuthAndOAuthConflict(t *testing.T) {
 
 	opts := HandlerOpts{
 		Pool:          mocks.NewPool(t),
-		BasicAuth:     &BasicAuth{Username: "admin", Password: "pass"},
-		AuthProviders: []AuthProvider{newStubProvider(t, "github")},
+		BasicAuth:     &BasicAuth{Username: testBasicAuthUser, Password: testBasicAuthPass},
+		AuthProviders: []AuthProvider{newStubProvider(t, testProviderGithub)},
 	}
 	err := opts.validate()
 
@@ -135,7 +135,7 @@ func TestHandlerOpts_Validate_AuthProviders_Valid(t *testing.T) {
 
 	opts := HandlerOpts{
 		Pool:          mocks.NewPool(t),
-		AuthProviders: []AuthProvider{newStubProvider(t, "github"), newStubProvider(t, "google")},
+		AuthProviders: []AuthProvider{newStubProvider(t, testProviderGithub), newStubProvider(t, "google")},
 	}
 	err := opts.validate()
 
@@ -147,7 +147,7 @@ func TestHandlerOpts_Validate_DuplicateProviderID(t *testing.T) {
 
 	opts := HandlerOpts{
 		Pool:          mocks.NewPool(t),
-		AuthProviders: []AuthProvider{newStubProvider(t, "github"), newStubProvider(t, "github")},
+		AuthProviders: []AuthProvider{newStubProvider(t, testProviderGithub), newStubProvider(t, testProviderGithub)},
 	}
 	err := opts.validate()
 
@@ -159,7 +159,7 @@ func TestHandlerOpts_SetDefaults_SessionStore(t *testing.T) {
 	t.Parallel()
 
 	opts := HandlerOpts{
-		AuthProviders: []AuthProvider{newStubProvider(t, "github")},
+		AuthProviders: []AuthProvider{newStubProvider(t, testProviderGithub)},
 	}
 	opts.setDefaults()
 
@@ -176,7 +176,7 @@ func TestHandlerOpts_SetDefaults_SessionMaxAge(t *testing.T) {
 	t.Parallel()
 
 	opts := HandlerOpts{
-		AuthProviders: []AuthProvider{newStubProvider(t, "github")},
+		AuthProviders: []AuthProvider{newStubProvider(t, testProviderGithub)},
 	}
 	opts.setDefaults()
 

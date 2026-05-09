@@ -16,19 +16,34 @@ const (
 	orderDESC = "DESC"
 )
 
+const (
+	statusPending   = "pending"
+	statusRunning   = "running"
+	statusCompleted = "completed"
+	statusFailed    = "failed"
+	statusCancelled = "cancelled"
+)
+
+const (
+	orderByID          = "id"
+	orderByCreatedAt   = "created_at"
+	orderByUpdatedAt   = "updated_at"
+	orderByBlockedTill = "blocked_till"
+)
+
 var validStatuses = map[string]bool{
-	"pending":   true,
-	"running":   true,
-	"completed": true,
-	"failed":    true,
-	"cancelled": true,
+	statusPending:   true,
+	statusRunning:   true,
+	statusCompleted: true,
+	statusFailed:    true,
+	statusCancelled: true,
 }
 
 var validOrderFields = map[string]bool{
-	"id":           true,
-	"created_at":   true,
-	"updated_at":   true,
-	"blocked_till": true,
+	orderByID:          true,
+	orderByCreatedAt:   true,
+	orderByUpdatedAt:   true,
+	orderByBlockedTill: true,
 }
 
 func (h *handler) handleListTasks(w http.ResponseWriter, r *http.Request) {

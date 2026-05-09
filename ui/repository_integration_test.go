@@ -61,9 +61,9 @@ func TestGetTaskTypeStats_MultipleTypesAndStatuses(t *testing.T) {
 		lookup[s.Type][s.Status] = s.Count
 	}
 
-	assert.Equal(t, int64(2), lookup["stats-email"]["pending"])
-	assert.Equal(t, int64(1), lookup["stats-email"]["failed"])
-	assert.Equal(t, int64(1), lookup["stats-report"]["completed"])
+	assert.Equal(t, int64(2), lookup["stats-email"][statusPending])
+	assert.Equal(t, int64(1), lookup["stats-email"][statusFailed])
+	assert.Equal(t, int64(1), lookup["stats-report"][statusCompleted])
 }
 
 func TestGetTaskTypeStats_SingleTypeAllStatuses(t *testing.T) {
@@ -90,10 +90,10 @@ func TestGetTaskTypeStats_SingleTypeAllStatuses(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, int64(1), lookup["pending"])
-	assert.Equal(t, int64(1), lookup["running"])
-	assert.Equal(t, int64(1), lookup["failed"])
-	assert.Equal(t, int64(1), lookup["completed"])
+	assert.Equal(t, int64(1), lookup[statusPending])
+	assert.Equal(t, int64(1), lookup[statusRunning])
+	assert.Equal(t, int64(1), lookup[statusFailed])
+	assert.Equal(t, int64(1), lookup[statusCompleted])
 }
 
 // --- GetDistinctTaskTypes ---
@@ -165,7 +165,7 @@ func TestListTasks_NoFilters(t *testing.T) {
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
@@ -195,16 +195,16 @@ func TestListTasks_FilterByStatus(t *testing.T) {
 	insertPendingTask(t, db, "list-status", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
-		Statuses: []string{"failed"},
+		Statuses: []string{statusFailed},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.Total)
 	assert.Len(t, result.Tasks, 1)
-	assert.Equal(t, "failed", result.Tasks[0].Status)
+	assert.Equal(t, statusFailed, result.Tasks[0].Status)
 }
 
 func TestListTasks_FilterByMultipleStatuses(t *testing.T) {
@@ -219,16 +219,16 @@ func TestListTasks_FilterByMultipleStatuses(t *testing.T) {
 	insertPendingTask(t, db, "list-multi-status", []byte(`{}`))
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
-		Statuses: []string{"pending", "failed"},
+		Statuses: []string{statusPending, statusFailed},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, result.Total)
 	for _, task := range result.Tasks {
-		assert.Contains(t, []string{"pending", "failed"}, task.Status)
+		assert.Contains(t, []string{statusPending, statusFailed}, task.Status)
 	}
 }
 
@@ -246,7 +246,7 @@ func TestListTasks_FilterByType(t *testing.T) {
 		Types:    []string{"list-type-a"},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
@@ -270,7 +270,7 @@ func TestListTasks_FilterByIDs(t *testing.T) {
 		IDs:      []int64{id1, id3},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
@@ -287,26 +287,26 @@ func TestListTasks_Pagination(t *testing.T) {
 	ctx := context.Background()
 
 	for range 5 {
-		insertPendingTask(t, db, "list-page", []byte(`{}`))
+		insertPendingTask(t, db, testTaskTypeListPage, []byte(`{}`))
 	}
 
 	page1, err := uiRepo.ListTasks(ctx, ListTasksParams{
-		Types:    []string{"list-page"},
+		Types:    []string{testTaskTypeListPage},
 		Limit:    2,
 		Offset:   0,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	assert.Len(t, page1.Tasks, 2)
 	assert.Equal(t, 5, page1.Total)
 
 	page2, err := uiRepo.ListTasks(ctx, ListTasksParams{
-		Types:    []string{"list-page"},
+		Types:    []string{testTaskTypeListPage},
 		Limit:    2,
 		Offset:   2,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	assert.Len(t, page2.Tasks, 2)
@@ -317,11 +317,11 @@ func TestListTasks_Pagination(t *testing.T) {
 
 	// Last page
 	page3, err := uiRepo.ListTasks(ctx, ListTasksParams{
-		Types:    []string{"list-page"},
+		Types:    []string{testTaskTypeListPage},
 		Limit:    2,
 		Offset:   4,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	assert.Len(t, page3.Tasks, 1)
@@ -342,7 +342,7 @@ func TestListTasks_SortOrderDESC(t *testing.T) {
 		Types:    []string{"list-sort"},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "DESC",
+		OrderDir: orderDESC,
 	})
 
 	require.NoError(t, err)
@@ -365,8 +365,8 @@ func TestListTasks_SortByCreatedAt(t *testing.T) {
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Types:    []string{"list-sort-created"},
 		Limit:    100,
-		OrderBy:  "created_at",
-		OrderDir: "ASC",
+		OrderBy:  orderByCreatedAt,
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
@@ -387,16 +387,16 @@ func TestListTasks_CombinedFilters(t *testing.T) {
 
 	result, err := uiRepo.ListTasks(ctx, ListTasksParams{
 		Types:    []string{"list-combo-a"},
-		Statuses: []string{"pending"},
+		Statuses: []string{statusPending},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.Total)
 	assert.Equal(t, "list-combo-a", result.Tasks[0].Type)
-	assert.Equal(t, "pending", result.Tasks[0].Status)
+	assert.Equal(t, statusPending, result.Tasks[0].Status)
 }
 
 func TestListTasks_EmptyResult(t *testing.T) {
@@ -409,7 +409,7 @@ func TestListTasks_EmptyResult(t *testing.T) {
 		Types:    []string{"nonexistent-type-xyz-12345"},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
@@ -434,7 +434,7 @@ func TestListTasks_LargePayloadSize(t *testing.T) {
 		Types:    []string{"list-large-payload"},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
@@ -455,7 +455,7 @@ func TestListTasks_InvalidOrderByDefaultsToID(t *testing.T) {
 		Types:    []string{"list-invalid-order"},
 		Limit:    100,
 		OrderBy:  "something_unknown",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 
 	require.NoError(t, err)
@@ -484,11 +484,11 @@ func TestBulkRetryFailed_AllFailed(t *testing.T) {
 		IDs:      []int64{id1, id2, id3},
 		Limit:    10,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	for _, task := range result.Tasks {
-		assert.Equal(t, "pending", task.Status)
+		assert.Equal(t, statusPending, task.Status)
 	}
 }
 
@@ -513,11 +513,11 @@ func TestBulkRetryFailed_FilterByType(t *testing.T) {
 		IDs:      []int64{id3},
 		Limit:    10,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	require.Len(t, result.Tasks, 1)
-	assert.Equal(t, "failed", result.Tasks[0].Status)
+	assert.Equal(t, statusFailed, result.Tasks[0].Status)
 }
 
 func TestBulkRetryFailed_NoMatchingTasks(t *testing.T) {
@@ -556,7 +556,7 @@ func TestBulkRetryFailed_SkipsNonFailedTasks(t *testing.T) {
 		IDs:      []int64{pendingID, runningID, completedID, failedID},
 		Limit:    10,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 
@@ -564,10 +564,10 @@ func TestBulkRetryFailed_SkipsNonFailedTasks(t *testing.T) {
 	for _, task := range result.Tasks {
 		statusMap[task.ID] = task.Status
 	}
-	assert.Equal(t, "pending", statusMap[pendingID])
-	assert.Equal(t, "running", statusMap[runningID])
-	assert.Equal(t, "completed", statusMap[completedID])
-	assert.Equal(t, "pending", statusMap[failedID]) // was failed, now pending
+	assert.Equal(t, statusPending, statusMap[pendingID])
+	assert.Equal(t, statusRunning, statusMap[runningID])
+	assert.Equal(t, statusCompleted, statusMap[completedID])
+	assert.Equal(t, statusPending, statusMap[failedID]) // was failed, now pending
 }
 
 func TestBulkRetryFailed_SetsAttemptsLeftToOneWhenZero(t *testing.T) {
@@ -587,11 +587,11 @@ func TestBulkRetryFailed_SetsAttemptsLeftToOneWhenZero(t *testing.T) {
 		IDs:      []int64{id},
 		Limit:    1,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	require.Len(t, result.Tasks, 1)
-	assert.Equal(t, "pending", result.Tasks[0].Status)
+	assert.Equal(t, statusPending, result.Tasks[0].Status)
 	assert.Equal(t, 1, result.Tasks[0].AttemptsLeft)
 }
 
@@ -633,11 +633,11 @@ func TestBulkRetryFailed_ConcurrentAccess(t *testing.T) {
 		Types:    []string{"bulk-retry-concurrent"},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	for _, task := range result.Tasks {
-		assert.Equal(t, "pending", task.Status)
+		assert.Equal(t, statusPending, task.Status)
 	}
 }
 
@@ -663,7 +663,7 @@ func TestBulkDeleteFailed_AllFailed(t *testing.T) {
 		Types:    []string{"bulk-delete-all"},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 0, result.Total)
@@ -690,11 +690,11 @@ func TestBulkDeleteFailed_FilterByType(t *testing.T) {
 		Types:    []string{"bulk-del-type-b"},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.Total)
-	assert.Equal(t, "failed", result.Tasks[0].Status)
+	assert.Equal(t, statusFailed, result.Tasks[0].Status)
 }
 
 func TestBulkDeleteFailed_NoMatchingTasks(t *testing.T) {
@@ -731,7 +731,7 @@ func TestBulkDeleteFailed_SkipsNonFailedTasks(t *testing.T) {
 		IDs:      []int64{pendingID, completedID},
 		Limit:    10,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 2, result.Total)
@@ -755,7 +755,7 @@ func TestListTasks_FilterByIdempotencyTokenPresence(t *testing.T) {
 		IdempotencyToken: "has",
 		Limit:            100,
 		OrderBy:          "id",
-		OrderDir:         "ASC",
+		OrderDir:         orderASC,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 2, hasResult.Total)
@@ -768,7 +768,7 @@ func TestListTasks_FilterByIdempotencyTokenPresence(t *testing.T) {
 		IdempotencyToken: "none",
 		Limit:            100,
 		OrderBy:          "id",
-		OrderDir:         "ASC",
+		OrderDir:         orderASC,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 2, noneResult.Total)
@@ -857,7 +857,7 @@ func TestBulkDeleteFailed_ConcurrentAccess(t *testing.T) {
 		Types:    []string{"bulk-del-concurrent"},
 		Limit:    100,
 		OrderBy:  "id",
-		OrderDir: "ASC",
+		OrderDir: orderASC,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 0, result.Total)

@@ -184,7 +184,7 @@ func (h *handler) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.opts.SecureCookies,
 	})
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
+	writeJSON(w, http.StatusOK, map[string]string{fieldStatus: "logged_out"})
 }
 
 func (h *handler) findProvider(id string) AuthProvider {

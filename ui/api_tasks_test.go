@@ -28,8 +28,8 @@ func TestParseListParams(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 100, params.Limit)
 		assert.Equal(t, 0, params.Offset)
-		assert.Equal(t, "id", params.OrderBy)
-		assert.Equal(t, "ASC", params.OrderDir)
+		assert.Equal(t, orderByID, params.OrderBy)
+		assert.Equal(t, orderASC, params.OrderDir)
 		assert.Empty(t, params.Statuses)
 		assert.Empty(t, params.Types)
 		assert.Empty(t, params.IDs)
@@ -43,13 +43,13 @@ func TestParseListParams(t *testing.T) {
 		params, err := parseListParams(r)
 
 		require.NoError(t, err)
-		assert.Equal(t, []string{"failed", "pending"}, params.Statuses)
-		assert.Equal(t, []string{"email.send"}, params.Types)
+		assert.Equal(t, []string{statusFailed, statusPending}, params.Statuses)
+		assert.Equal(t, []string{testTaskTypeEmailSend}, params.Types)
 		assert.Equal(t, []int64{1, 2, 3}, params.IDs)
 		assert.Equal(t, 50, params.Limit)
 		assert.Equal(t, 10, params.Offset)
-		assert.Equal(t, "created_at", params.OrderBy)
-		assert.Equal(t, "DESC", params.OrderDir)
+		assert.Equal(t, orderByCreatedAt, params.OrderBy)
+		assert.Equal(t, orderDESC, params.OrderDir)
 	})
 
 	t.Run("invalid status", func(t *testing.T) {
@@ -191,7 +191,7 @@ func TestTaskInfoToDetailResponse(t *testing.T) {
 
 	info := &client.TaskInfo{
 		ID:               42,
-		Type:             "email.send",
+		Type:             testTaskTypeEmailSend,
 		Payload:          []byte(`{"to":"user@example.com"}`),
 		Status:           asynqpg.TaskStatusFailed,
 		IdempotencyToken: &token,
@@ -211,8 +211,8 @@ func TestTaskInfoToDetailResponse(t *testing.T) {
 		resp := taskInfoToDetailResponse(info, false)
 
 		assert.Equal(t, int64(42), resp.ID)
-		assert.Equal(t, "email.send", resp.Type)
-		assert.Equal(t, "failed", resp.Status)
+		assert.Equal(t, testTaskTypeEmailSend, resp.Type)
+		assert.Equal(t, statusFailed, resp.Status)
 		require.NotNil(t, resp.Payload)
 		assert.Equal(t, `{"to":"user@example.com"}`, *resp.Payload)
 		assert.Equal(t, len(info.Payload), resp.PayloadSize)

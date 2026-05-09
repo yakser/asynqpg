@@ -43,7 +43,7 @@ func TestNewHandler(t *testing.T) {
 
 		h, err := NewHandler(HandlerOpts{
 			Pool:      mocks.NewPool(t),
-			BasicAuth: &BasicAuth{Username: "admin", Password: "pass"},
+			BasicAuth: &BasicAuth{Username: testBasicAuthUser, Password: testBasicAuthPass},
 		})
 
 		require.NoError(t, err)
@@ -176,7 +176,7 @@ func TestHandleHealth_WithBasicAuth(t *testing.T) {
 
 	h, err := NewHandler(HandlerOpts{
 		Pool:      p,
-		BasicAuth: &BasicAuth{Username: "admin", Password: "pass"},
+		BasicAuth: &BasicAuth{Username: testBasicAuthUser, Password: testBasicAuthPass},
 	})
 	require.NoError(t, err)
 
@@ -184,7 +184,7 @@ func TestHandleHealth_WithBasicAuth(t *testing.T) {
 		t.Parallel()
 
 		req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
-		req.SetBasicAuth("admin", "pass")
+		req.SetBasicAuth(testBasicAuthUser, testBasicAuthPass)
 		rec := httptest.NewRecorder()
 
 		h.ServeHTTP(rec, req)
@@ -282,7 +282,7 @@ func TestParseTaskID(t *testing.T) {
 func TestHandler_OAuth_PublicRoutesAccessible(t *testing.T) {
 	t.Parallel()
 
-	provider := newTestAuthProvider(t, "github", "GitHub", "")
+	provider := newTestAuthProvider(t, testProviderGithub, "GitHub", "")
 	p := mocks.NewPool(t)
 	p.EXPECT().PingContext(mock.Anything).Return(nil).Maybe()
 	h, err := NewHandler(HandlerOpts{
@@ -315,7 +315,7 @@ func TestHandler_OAuth_PublicRoutesAccessible(t *testing.T) {
 func TestHandler_OAuth_ProtectedRoutesRequireSession(t *testing.T) {
 	t.Parallel()
 
-	provider := newTestAuthProvider(t, "github", "GitHub", "")
+	provider := newTestAuthProvider(t, testProviderGithub, "GitHub", "")
 	h, err := NewHandler(HandlerOpts{
 		Pool:          mocks.NewPool(t),
 		AuthProviders: []AuthProvider{provider},
@@ -332,7 +332,7 @@ func TestHandler_OAuth_ProtectedRoutesRequireSession(t *testing.T) {
 func TestHandler_OAuth_SPARoutesAccessible(t *testing.T) {
 	t.Parallel()
 
-	provider := newTestAuthProvider(t, "github", "GitHub", "")
+	provider := newTestAuthProvider(t, testProviderGithub, "GitHub", "")
 	h, err := NewHandler(HandlerOpts{
 		Pool:          mocks.NewPool(t),
 		AuthProviders: []AuthProvider{provider},
@@ -352,12 +352,12 @@ func TestHandleConfig_AuthMode_Basic(t *testing.T) {
 
 	h, err := NewHandler(HandlerOpts{
 		Pool:      mocks.NewPool(t),
-		BasicAuth: &BasicAuth{Username: "admin", Password: "pass"},
+		BasicAuth: &BasicAuth{Username: testBasicAuthUser, Password: testBasicAuthPass},
 	})
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
-	req.SetBasicAuth("admin", "pass")
+	req.SetBasicAuth(testBasicAuthUser, testBasicAuthPass)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -395,7 +395,7 @@ func TestHandleConfig_AuthMode_OAuth(t *testing.T) {
 	store := NewMemorySessionStore()
 	defer store.Close()
 
-	provider := newTestAuthProvider(t, "github", "GitHub", "")
+	provider := newTestAuthProvider(t, testProviderGithub, "GitHub", "")
 	h, err := NewHandler(HandlerOpts{
 		Pool:          mocks.NewPool(t),
 		AuthProviders: []AuthProvider{provider},

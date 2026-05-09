@@ -123,13 +123,13 @@ func (h *handler) oauthEnabled() bool {
 func (h *handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if err := h.pool.PingContext(r.Context()); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"status":  "error",
-			"message": "database unreachable",
+			fieldStatus: "error",
+			"message":   "database unreachable",
 		})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{fieldStatus: "ok"})
 }
 
 // configResponse is returned by the config endpoint for frontend runtime configuration.

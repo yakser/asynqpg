@@ -16,7 +16,7 @@ func TestWriteJSON(t *testing.T) {
 		t.Parallel()
 
 		rec := httptest.NewRecorder()
-		writeJSON(rec, 200, map[string]string{"status": "ok"})
+		writeJSON(rec, 200, map[string]string{fieldStatus: "ok"})
 
 		assert.Equal(t, 200, rec.Code)
 		assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
