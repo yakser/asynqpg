@@ -80,8 +80,8 @@ def release_core(version: str) -> None:
     info(f"Creating annotated tag {tag} for core module")
     git("tag", "-a", tag, "-m", f"Release {MODULE} {version}")
 
-    info("Done. Push with:")
-    print(f"  git push origin master --tags")
+    info("Done. Push the tag with:")
+    print(f"  git push origin {tag}")
 
 
 def release_ui(version: str, core_version: str) -> None:
@@ -98,7 +98,9 @@ def release_ui(version: str, core_version: str) -> None:
             die("no core tags found -- release core first or use --core-version")
         info(f"Using latest core tag: {core_version}")
 
-    # Step 1: Remove replace directive, update require, tidy.
+    # Remember the starting commit so we can rewind master after tagging.
+    start_commit = git("rev-parse", "HEAD").stdout.strip()
+
     info(f"Preparing ui/go.mod for release (core {core_version})")
 
     content = ui_gomod.read_text()
@@ -119,40 +121,23 @@ def release_ui(version: str, core_version: str) -> None:
 
     ui_gomod.write_text(content)
 
-    # Tidy.
-    subprocess.run(["go", "mod", "tidy"], check=True, cwd=REPO_ROOT / "ui")
+    try:
+        subprocess.run(["go", "mod", "tidy"], check=True, cwd=REPO_ROOT / "ui")
 
-    # Commit the go.mod/go.sum changes.
-    git("add", "ui/go.mod", "ui/go.sum")
-    git("commit", "-m", f"chore(ui): prepare release {version} (core {core_version})")
+        # Throwaway commit so the tag has a stable revision to point to.
+        git("add", "ui/go.mod", "ui/go.sum")
+        git("commit", "-m", f"chore(ui): release {version} (core {core_version})")
 
-    # Step 2: Create annotated tag.
-    info(f"Creating annotated tag {tag} for UI module")
-    git("tag", "-a", tag, "-m", f"Release {MODULE}/ui {version}")
+        info(f"Creating annotated tag {tag} for UI module")
+        git("tag", "-a", tag, "-m", f"Release {MODULE}/ui {version}")
+    finally:
+        # Rewind master to its original state. The tag keeps the release commit
+        # reachable, so nothing is lost; master stays free of release plumbing.
+        info("Rewinding master to original HEAD (tag preserves the release commit)")
+        git("reset", "--hard", start_commit)
 
-    # Step 3: Restore replace directive.
-    info("Restoring replace directive in ui/go.mod")
-
-    content = ui_gomod.read_text()
-
-    # Restore pseudo-version for local dev.
-    content = content.replace(
-        f"github.com/yakser/asynqpg {core_version}",
-        "github.com/yakser/asynqpg v0.0.0",
-    )
-
-    # Add replace directive back.
-    content = content.rstrip() + "\n\nreplace github.com/yakser/asynqpg => ../\n"
-
-    ui_gomod.write_text(content)
-
-    subprocess.run(["go", "mod", "tidy"], check=True, cwd=REPO_ROOT / "ui")
-
-    git("add", "ui/go.mod", "ui/go.sum")
-    git("commit", "-m", f"chore(ui): restore replace directive after {version} release")
-
-    info("Done. Push with:")
-    print("  git push origin master --tags")
+    info("Done. Push the tag with:")
+    print(f"  git push origin {tag}")
 
 
 def main() -> None:
