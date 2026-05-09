@@ -39,6 +39,12 @@ test-integration: ## Run integration tests (all modules)
 .PHONY: test-all
 test-all: test test-integration ## Run all tests
 
+.PHONY: bench
+bench: ## Run benchmarks (integration, requires Docker)
+	@echo "Running benchmarks..."
+	go test -v -tags=integration -bench=. -benchmem -count=3 -timeout=30m ./...
+	@echo "Benchmarks completed"
+
 .PHONY: fake-assets
 fake-assets: ## Create placeholder dist/ for Go-only development
 	@mkdir -p ui/frontend/dist/assets
