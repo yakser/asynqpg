@@ -16,19 +16,34 @@ const (
 	orderDESC = "DESC"
 )
 
+const (
+	statusPending   = "pending"
+	statusRunning   = "running"
+	statusCompleted = "completed"
+	statusFailed    = "failed"
+	statusCancelled = "cancelled"
+)
+
+const (
+	orderByID          = "id"
+	orderByCreatedAt   = "created_at"
+	orderByUpdatedAt   = "updated_at"
+	orderByBlockedTill = "blocked_till"
+)
+
 var validStatuses = map[string]bool{
-	"pending":   true,
-	"running":   true,
-	"completed": true,
-	"failed":    true,
-	"cancelled": true,
+	statusPending:   true,
+	statusRunning:   true,
+	statusCompleted: true,
+	statusFailed:    true,
+	statusCancelled: true,
 }
 
 var validOrderFields = map[string]bool{
-	"id":           true,
-	"created_at":   true,
-	"updated_at":   true,
-	"blocked_till": true,
+	orderByID:          true,
+	orderByCreatedAt:   true,
+	orderByUpdatedAt:   true,
+	orderByBlockedTill: true,
 }
 
 func (h *handler) handleListTasks(w http.ResponseWriter, r *http.Request) {
@@ -232,6 +247,13 @@ func parseListParams(r *http.Request) (*ListTasksParams, error) {
 			return nil, errors.New("created_before must be a valid RFC3339 timestamp")
 		}
 		params.CreatedBefore = &t
+	}
+
+	if v := r.URL.Query().Get("idempotency_token"); v != "" {
+		if v != IdempotencyHas && v != IdempotencyNone {
+			return nil, errors.New("idempotency_token must be 'has' or 'none'")
+		}
+		params.IdempotencyToken = v
 	}
 
 	return params, nil

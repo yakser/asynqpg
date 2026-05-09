@@ -58,7 +58,7 @@ up: ## Run postgresql in docker
 .PHONY: demo-up
 demo-up: ## Start PostgreSQL + observability stack (Jaeger, Prometheus, Grafana, OTel Collector)
 	@echo "Starting infrastructure..."
-	@docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml --env-file examples/demo/.env up -d --quiet-pull 2>/dev/null
+	docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml --env-file examples/demo/.env up -d --quiet-pull
 	@echo "Waiting for services to be ready..."
 	@sleep 5
 	@echo "Infrastructure ready."

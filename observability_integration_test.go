@@ -22,6 +22,8 @@ import (
 	"github.com/yakser/asynqpg/testutils"
 )
 
+const obsTaskTypeEmail = "email"
+
 func TestObservability_EnqueueMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -40,14 +42,14 @@ func TestObservability_EnqueueMetrics(t *testing.T) {
 	ctx := context.Background()
 
 	_, err = p.Enqueue(ctx, &asynqpg.Task{
-		Type:             "email",
+		Type:             obsTaskTypeEmail,
 		Payload:          []byte(`{"to":"user@example.com"}`),
 		IdempotencyToken: ptr.Get("obs-enqueue-1"),
 	})
 	require.NoError(t, err)
 
 	_, err = p.Enqueue(ctx, &asynqpg.Task{
-		Type:             "email",
+		Type:             obsTaskTypeEmail,
 		Payload:          []byte(`{"to":"user2@example.com"}`),
 		IdempotencyToken: ptr.Get("obs-enqueue-2"),
 	})
@@ -82,8 +84,8 @@ func TestObservability_EnqueueManyMetrics(t *testing.T) {
 	ctx := context.Background()
 
 	tasks := []*asynqpg.Task{
-		{Type: "email", Payload: []byte(`{}`), IdempotencyToken: ptr.Get("obs-many-1")},
-		{Type: "email", Payload: []byte(`{}`), IdempotencyToken: ptr.Get("obs-many-2")},
+		{Type: obsTaskTypeEmail, Payload: []byte(`{}`), IdempotencyToken: ptr.Get("obs-many-1")},
+		{Type: obsTaskTypeEmail, Payload: []byte(`{}`), IdempotencyToken: ptr.Get("obs-many-2")},
 		{Type: "sms", Payload: []byte(`{}`), IdempotencyToken: ptr.Get("obs-many-3")},
 	}
 	_, err = p.EnqueueMany(ctx, tasks)
@@ -113,7 +115,7 @@ func TestObservability_EnqueueTracing(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:             "email",
+		Type:             obsTaskTypeEmail,
 		Payload:          []byte(`{}`),
 		IdempotencyToken: ptr.Get("obs-trace-enq-1"),
 	})
@@ -124,7 +126,7 @@ func TestObservability_EnqueueTracing(t *testing.T) {
 
 	span := spans[0]
 	assert.Equal(t, "asynqpg.enqueue", span.Name())
-	assertSpanHasAttribute(t, span, "task_type", "email")
+	assertSpanHasAttribute(t, span, "task_type", obsTaskTypeEmail)
 }
 
 func TestObservability_EnqueueManyTracing(t *testing.T) {
@@ -143,7 +145,7 @@ func TestObservability_EnqueueManyTracing(t *testing.T) {
 	require.NoError(t, err)
 
 	tasks := []*asynqpg.Task{
-		{Type: "email", Payload: []byte(`{}`), IdempotencyToken: ptr.Get("obs-trace-many-1")},
+		{Type: obsTaskTypeEmail, Payload: []byte(`{}`), IdempotencyToken: ptr.Get("obs-trace-many-1")},
 		{Type: "sms", Payload: []byte(`{}`), IdempotencyToken: ptr.Get("obs-trace-many-2")},
 	}
 	_, err = p.EnqueueMany(context.Background(), tasks)

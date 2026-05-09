@@ -6,6 +6,10 @@ import (
 	"net/http"
 )
 
+// fieldStatus is the JSON field name used by ad-hoc status responses
+// (health checks, logout) that don't have a dedicated typed response.
+const fieldStatus = "status"
+
 type apiResponse struct {
 	Data  any       `json:"data"`
 	Error *apiError `json:"error,omitzero"`

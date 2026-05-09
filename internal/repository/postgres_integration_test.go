@@ -15,6 +15,8 @@ import (
 	"github.com/yakser/asynqpg/testutils"
 )
 
+const taskTypeReadyLocked = "ready-locked"
+
 func ptr(s string) *string { return &s }
 
 func TestPushTask_Basic(t *testing.T) {
@@ -175,7 +177,7 @@ func TestGetReadyTasks_SkipsLockedTasks(t *testing.T) {
 	// Arrange
 	for range 3 {
 		_, err := repo.PushTask(ctx, &repository.PushTaskParams{
-			Type:         "ready-locked",
+			Type:         taskTypeReadyLocked,
 			Payload:      []byte(`{}`),
 			AttemptsLeft: 3,
 			Delay:        db.NewDuration(0),
@@ -185,7 +187,7 @@ func TestGetReadyTasks_SkipsLockedTasks(t *testing.T) {
 
 	// Act – first fetch sets them to running with future blocked_till
 	got1, err := repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type:  "ready-locked",
+		Type:  taskTypeReadyLocked,
 		Limit: 3,
 		Delay: time.Minute,
 	})
@@ -193,7 +195,7 @@ func TestGetReadyTasks_SkipsLockedTasks(t *testing.T) {
 	require.Len(t, got1, 3)
 
 	got2, err := repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type:  "ready-locked",
+		Type:  taskTypeReadyLocked,
 		Limit: 3,
 		Delay: time.Minute,
 	})

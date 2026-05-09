@@ -22,14 +22,14 @@ func TestBasicAuthMiddleware(t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	middleware := basicAuthMiddleware("admin", "secret")
+	middleware := basicAuthMiddleware(testBasicAuthUser, "secret")
 	protected := middleware(okHandler)
 
 	t.Run("valid credentials", func(t *testing.T) {
 		t.Parallel()
 
 		req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-		req.SetBasicAuth("admin", "secret")
+		req.SetBasicAuth(testBasicAuthUser, "secret")
 		rec := httptest.NewRecorder()
 
 		protected.ServeHTTP(rec, req)
@@ -42,7 +42,7 @@ func TestBasicAuthMiddleware(t *testing.T) {
 		t.Parallel()
 
 		req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-		req.SetBasicAuth("admin", "wrong")
+		req.SetBasicAuth(testBasicAuthUser, "wrong")
 		rec := httptest.NewRecorder()
 
 		protected.ServeHTTP(rec, req)
@@ -158,7 +158,7 @@ func TestSessionAuthMiddleware_ValidSession(t *testing.T) {
 
 	sess := &uiauth.Session{
 		Token:     "valid-token",
-		User:      uiauth.User{ID: "42", Name: "Alice", Provider: "github"},
+		User:      uiauth.User{ID: "42", Name: testUserName, Provider: testProviderGithub},
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
@@ -182,7 +182,7 @@ func TestSessionAuthMiddleware_ValidSession(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	require.NotNil(t, capturedUser)
 	assert.Equal(t, "42", capturedUser.ID)
-	assert.Equal(t, "Alice", capturedUser.Name)
+	assert.Equal(t, testUserName, capturedUser.Name)
 }
 
 func TestSessionAuthMiddleware_NoCookie(t *testing.T) {
@@ -240,13 +240,13 @@ func TestSessionAuthMiddleware_ExpiredSession(t *testing.T) {
 
 	// Save a session that's already expired but hasn't been cleaned up yet.
 	sess := &uiauth.Session{
-		Token:     "expired-token",
+		Token:     testExpiredToken,
 		User:      uiauth.User{ID: "1"},
 		CreatedAt: time.Now().Add(-2 * time.Hour),
 		ExpiresAt: time.Now().Add(-time.Hour),
 	}
 	// Bypass normal Get (which would reject expired), store directly.
-	store.sessions.Store("expired-token", sess)
+	store.sessions.Store(testExpiredToken, sess)
 
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -256,7 +256,7 @@ func TestSessionAuthMiddleware_ExpiredSession(t *testing.T) {
 	protected := middleware(inner)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "expired-token"})
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: testExpiredToken})
 	rec := httptest.NewRecorder()
 
 	protected.ServeHTTP(rec, req)

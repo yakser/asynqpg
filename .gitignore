@@ -62,6 +62,8 @@ logs/
 cmd/example/example
 cmd/transaction_example/transaction_example
 cmd/scheduler_example/scheduler_example
+/asynqpg-bench
+/examples/demo/demo
 
 # Database files
 *.db
@@ -91,6 +93,12 @@ docker-data/
 # Python
 .venv
 __pycache__/
+.ipynb_checkpoints/
+
+# Bench results (one JSON per run); keep .gitkeep so dir exists
+results/
+!results/.gitkeep
+bench/
 
 # Frontend node_modules (dist/ must stay committed for go:embed)
 ui/frontend/node_modules/
@@ -98,3 +106,6 @@ ui/frontend/node_modules/
 .scripts/
 
 baseline/
+
+# Thesis analysis (Jupyter notebooks, exports)
+analysis/

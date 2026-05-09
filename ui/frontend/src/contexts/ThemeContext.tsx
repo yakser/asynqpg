@@ -1,27 +1,15 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-
-type Theme = "light" | "dark" | "system"
-
-interface ThemeContextValue {
-  theme: Theme
-  setTheme: (theme: Theme) => void
-}
-
-const ThemeContext = createContext<ThemeContextValue>({
-  theme: "system",
-  setTheme: () => {},
-})
-
-export function useTheme(): ThemeContextValue {
-  return useContext(ThemeContext)
-}
+import { useEffect, useState, type ReactNode } from "react"
+import { ThemeContext, type Theme } from "./theme"
 
 function applyTheme(theme: Theme) {
-  const isDark =
-    theme === "dark" ||
-    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+  const resolved =
+    theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light"
+      : theme
 
-  document.documentElement.classList.toggle("dark", isDark)
+  document.documentElement.setAttribute("data-theme", resolved)
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

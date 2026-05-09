@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
 import { Navigate, useSearchParams } from "react-router"
 import { getAuthProviders } from "@/api/client"
-import { useAuth } from "@/contexts/AuthContext"
-import { LogIn, AlertCircle } from "lucide-react"
+import { useAuth } from "@/contexts/auth"
+import { Icon } from "@/components/Icon"
 
 export function LoginPage() {
   const { isAuthenticated, authMode, isLoading: authLoading } = useAuth()
@@ -24,76 +24,142 @@ export function LoginPage() {
 
   if (authLoading) {
     return (
-      <main className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-950">
-        <div role="status" aria-live="polite">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-gray-100" />
-          <span className="sr-only">Loading</span>
-        </div>
+      <main
+        style={{
+          display: "grid",
+          placeItems: "center",
+          height: "100vh",
+          background: "var(--bg)",
+          color: "var(--fg-3)",
+          fontFamily: "var(--font-mono)",
+          fontSize: 13,
+        }}
+      >
+        loading…
       </main>
     )
   }
 
   if (authMode !== "oauth" || isAuthenticated) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/overview" replace />
   }
 
   return (
-    <main className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-950">
-      <div className="w-full max-w-sm">
-        <div className="bg-white dark:bg-gray-900 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 p-8">
-          <div className="text-center mb-6">
-            <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">asynqpg</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sign in to continue</p>
+    <main
+      style={{
+        display: "grid",
+        placeItems: "center",
+        minHeight: "100vh",
+        background: "var(--bg)",
+        padding: 24,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <div
+          style={{
+            background: "var(--surface-1)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--r-3)",
+            padding: 24,
+          }}
+        >
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            <img
+              src="/assets/logo-mark.svg"
+              alt=""
+              style={{ width: 28, height: 28, color: "var(--brand-600)" }}
+            />
+            <h1
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 18,
+                fontWeight: 600,
+                margin: "10px 0 4px",
+                color: "var(--fg-1)",
+              }}
+            >
+              asynq<span style={{ color: "var(--brand-600)" }}>pg</span>
+            </h1>
+            <p style={{ fontSize: 12.5, color: "var(--fg-3)", margin: 0, fontFamily: "var(--font-mono)" }}>
+              sign in to continue
+            </p>
           </div>
 
           {error && (
-            <div role="alert" className="mb-4 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950 p-3 flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-              <div className="text-sm text-red-700 dark:text-red-400">
-                {error === "invalid_state" && "Authentication failed. Please try again."}
-                {error === "provider_error" && (errorMessage || "Provider authentication failed.")}
-                {error !== "invalid_state" && error !== "provider_error" && `Error: ${error}`}
-              </div>
+            <div
+              role="alert"
+              style={{
+                marginBottom: 14,
+                padding: "10px 12px",
+                borderRadius: "var(--r-2)",
+                border: "1px solid color-mix(in oklch, var(--status-failed) 30%, transparent)",
+                background: "var(--status-failed-bg)",
+                color: "var(--status-failed)",
+                fontSize: 12.5,
+                fontFamily: "var(--font-mono)",
+                display: "flex",
+                gap: 8,
+                alignItems: "flex-start",
+              }}
+            >
+              <Icon name="x-circle" size={14} />
+              <span>
+                {error === "invalid_state" && "authentication failed. please try again."}
+                {error === "provider_error" && (errorMessage || "provider authentication failed.")}
+                {error !== "invalid_state" &&
+                  error !== "provider_error" &&
+                  `error: ${error}`}
+              </span>
             </div>
           )}
 
           {isLoading && (
-            <div role="status" aria-live="polite" className="flex justify-center py-6">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-400" />
-              <span className="sr-only">Loading</span>
+            <div
+              role="status"
+              aria-live="polite"
+              style={{ textAlign: "center", padding: "16px 0", color: "var(--fg-3)", fontSize: 13 }}
+            >
+              loading providers…
             </div>
           )}
 
           {fetchError && (
-            <div className="text-center py-4">
-              <p className="text-sm text-red-600 dark:text-red-400 mb-2">Failed to load providers</p>
+            <div style={{ textAlign: "center", padding: "12px 0" }}>
+              <p style={{ fontSize: 13, color: "var(--status-failed)", margin: "0 0 6px" }}>
+                failed to load providers
+              </p>
               <button
                 onClick={() => refetch()}
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                className="link-btn"
+                type="button"
               >
-                Try again
+                try again
               </button>
             </div>
           )}
 
           {providers && providers.length === 0 && (
-            <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
-              No authentication providers configured.
+            <p
+              style={{
+                fontSize: 13,
+                color: "var(--fg-3)",
+                textAlign: "center",
+                padding: "12px 0",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              no authentication providers configured.
             </p>
           )}
 
           {providers && providers.length > 0 && (
-            <div className="space-y-3">
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {providers.map((p) => (
-                <a
-                  key={p.id}
-                  href={p.login_url}
-                  className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                >
+                <a key={p.id} href={p.login_url} className="btn lg" style={{ justifyContent: "center" }}>
                   {p.icon_url ? (
-                    <img src={p.icon_url} alt="" className="h-5 w-5" />
+                    <img src={p.icon_url} alt="" style={{ width: 18, height: 18 }} />
                   ) : (
-                    <LogIn className="h-4 w-4" />
+                    <Icon name="user" size={14} />
                   )}
                   Sign in with {p.name}
                 </a>
@@ -102,8 +168,16 @@ export function LoginPage() {
           )}
         </div>
 
-        <p className="text-xs text-gray-400 dark:text-gray-400 text-center mt-4">
-          Powered by asynqpg
+        <p
+          style={{
+            fontSize: 11,
+            color: "var(--fg-3)",
+            textAlign: "center",
+            marginTop: 12,
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          powered by asynqpg
         </p>
       </div>
     </main>

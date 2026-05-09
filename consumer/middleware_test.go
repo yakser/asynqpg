@@ -11,6 +11,8 @@ import (
 	"github.com/yakser/asynqpg"
 )
 
+const handlerStep = "handler"
+
 type contextKey string
 
 func orderTrackingMiddleware(name string, order *[]string) MiddlewareFunc {
@@ -48,7 +50,7 @@ func TestBuildHandlerChain(t *testing.T) {
 
 		var order []string
 		handler := TaskHandlerFunc(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-			order = append(order, "handler")
+			order = append(order, handlerStep)
 			return nil
 		})
 
@@ -56,7 +58,7 @@ func TestBuildHandlerChain(t *testing.T) {
 
 		err := got.Handle(context.Background(), &asynqpg.TaskInfo{})
 		require.NoError(t, err)
-		assert.Equal(t, []string{"global_before", "handler", "global_after"}, order)
+		assert.Equal(t, []string{"global_before", handlerStep, "global_after"}, order)
 	})
 
 	t.Run("per_task_only", func(t *testing.T) {
@@ -64,7 +66,7 @@ func TestBuildHandlerChain(t *testing.T) {
 
 		var order []string
 		handler := TaskHandlerFunc(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-			order = append(order, "handler")
+			order = append(order, handlerStep)
 			return nil
 		})
 
@@ -72,7 +74,7 @@ func TestBuildHandlerChain(t *testing.T) {
 
 		err := got.Handle(context.Background(), &asynqpg.TaskInfo{})
 		require.NoError(t, err)
-		assert.Equal(t, []string{"task_before", "handler", "task_after"}, order)
+		assert.Equal(t, []string{"task_before", handlerStep, "task_after"}, order)
 	})
 
 	t.Run("global_and_per_task_order", func(t *testing.T) {
@@ -80,7 +82,7 @@ func TestBuildHandlerChain(t *testing.T) {
 
 		var order []string
 		handler := TaskHandlerFunc(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-			order = append(order, "handler")
+			order = append(order, handlerStep)
 			return nil
 		})
 
@@ -93,7 +95,7 @@ func TestBuildHandlerChain(t *testing.T) {
 		err := got.Handle(context.Background(), &asynqpg.TaskInfo{})
 		require.NoError(t, err)
 
-		want := []string{"global_before", "task_before", "handler", "task_after", "global_after"}
+		want := []string{"global_before", "task_before", handlerStep, "task_after", "global_after"}
 		assert.Equal(t, want, order)
 	})
 
@@ -102,7 +104,7 @@ func TestBuildHandlerChain(t *testing.T) {
 
 		var order []string
 		handler := TaskHandlerFunc(func(ctx context.Context, task *asynqpg.TaskInfo) error {
-			order = append(order, "handler")
+			order = append(order, handlerStep)
 			return nil
 		})
 
@@ -119,7 +121,7 @@ func TestBuildHandlerChain(t *testing.T) {
 		err := got.Handle(context.Background(), &asynqpg.TaskInfo{})
 		require.NoError(t, err)
 
-		want := []string{"mw1_before", "mw2_before", "mw3_before", "handler", "mw3_after", "mw2_after", "mw1_after"}
+		want := []string{"mw1_before", "mw2_before", "mw3_before", handlerStep, "mw3_after", "mw2_after", "mw1_after"}
 		assert.Equal(t, want, order)
 	})
 

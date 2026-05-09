@@ -17,6 +17,16 @@ type taskTypeStatsResponse struct {
 	ByStatus map[string]int64 `json:"by_status"`
 }
 
+func newEmptyStatusCounts() map[string]int64 {
+	return map[string]int64{
+		statusPending:   0,
+		statusRunning:   0,
+		statusCompleted: 0,
+		statusFailed:    0,
+		statusCancelled: 0,
+	}
+}
+
 func (h *handler) handleStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.repo.GetTaskTypeStats(r.Context())
 	if err != nil {
@@ -25,13 +35,7 @@ func (h *handler) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	byStatus := map[string]int64{
-		"pending":   0,
-		"running":   0,
-		"completed": 0,
-		"failed":    0,
-		"cancelled": 0,
-	}
+	byStatus := newEmptyStatusCounts()
 
 	typeMap := make(map[string]*taskTypeStatsResponse)
 	var total int64
@@ -43,14 +47,8 @@ func (h *handler) handleStats(w http.ResponseWriter, r *http.Request) {
 		ts, ok := typeMap[s.Type]
 		if !ok {
 			ts = &taskTypeStatsResponse{
-				Type: s.Type,
-				ByStatus: map[string]int64{
-					"pending":   0,
-					"running":   0,
-					"completed": 0,
-					"failed":    0,
-					"cancelled": 0,
-				},
+				Type:     s.Type,
+				ByStatus: newEmptyStatusCounts(),
 			}
 			typeMap[s.Type] = ts
 		}

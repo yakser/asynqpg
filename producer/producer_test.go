@@ -16,6 +16,8 @@ import (
 	"github.com/yakser/asynqpg/producer/mocks"
 )
 
+const taskTypeTest = "test"
+
 // newTestProducer creates a Producer with a mock repo.
 func newTestProducer(repo producerRepo) *Producer {
 	m, _ := asynqpg.NewMetrics(nil)
@@ -80,7 +82,7 @@ func TestEnqueue_NilPayload(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:    "test",
+		Type:    taskTypeTest,
 		Payload: nil,
 	})
 	require.Error(t, err)
@@ -98,7 +100,7 @@ func TestEnqueue_WithDelay(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:    "test",
+		Type:    taskTypeTest,
 		Payload: []byte(`{}`),
 		Delay:   5 * time.Second,
 	})
@@ -120,7 +122,7 @@ func TestEnqueue_WithProcessAt(t *testing.T) {
 
 	processAt := time.Now().Add(10 * time.Second)
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:      "test",
+		Type:      taskTypeTest,
 		Payload:   []byte(`{}`),
 		ProcessAt: processAt,
 	})
@@ -139,7 +141,7 @@ func TestEnqueue_ProcessAtInPast(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:      "test",
+		Type:      taskTypeTest,
 		Payload:   []byte(`{}`),
 		ProcessAt: time.Now().Add(-time.Hour),
 	})
@@ -158,7 +160,7 @@ func TestEnqueue_CustomMaxRetry(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:     "test",
+		Type:     taskTypeTest,
 		Payload:  []byte(`{}`),
 		MaxRetry: ptr.Get(10),
 	})
@@ -177,7 +179,7 @@ func TestEnqueue_DefaultMaxRetry(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:    "test",
+		Type:    taskTypeTest,
 		Payload: []byte(`{}`),
 	})
 	require.NoError(t, err)
@@ -192,7 +194,7 @@ func TestEnqueue_RepoError(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:    "test",
+		Type:    taskTypeTest,
 		Payload: []byte(`{}`),
 	})
 	require.Error(t, err)
@@ -212,7 +214,7 @@ func TestEnqueue_IdempotencyToken(t *testing.T) {
 
 	token := "unique-token"
 	_, err := p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:             "test",
+		Type:             taskTypeTest,
 		Payload:          []byte(`{}`),
 		IdempotencyToken: &token,
 	})
@@ -228,7 +230,7 @@ func TestEnqueue_Duplicate(t *testing.T) {
 	p := newTestProducer(repo)
 
 	result, err := p.Enqueue(context.Background(), &asynqpg.Task{
-		Type:    "test",
+		Type:    taskTypeTest,
 		Payload: []byte(`{}`),
 	})
 	require.NoError(t, err)
@@ -246,7 +248,7 @@ func TestEnqueueTx_Success(t *testing.T) {
 	tx := rootmocks.NewTx(t)
 
 	_, err := p.EnqueueTx(context.Background(), tx, &asynqpg.Task{
-		Type:    "test",
+		Type:    taskTypeTest,
 		Payload: []byte(`{}`),
 	})
 	require.NoError(t, err)
@@ -259,7 +261,7 @@ func TestEnqueueTx_NilTx(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.EnqueueTx(context.Background(), nil, &asynqpg.Task{
-		Type:    "test",
+		Type:    taskTypeTest,
 		Payload: []byte(`{}`),
 	})
 	require.Error(t, err)
@@ -300,7 +302,7 @@ func TestEnqueueTx_RepoError(t *testing.T) {
 	tx := rootmocks.NewTx(t)
 
 	_, err := p.EnqueueTx(context.Background(), tx, &asynqpg.Task{
-		Type:    "test",
+		Type:    taskTypeTest,
 		Payload: []byte(`{}`),
 	})
 	require.Error(t, err)
@@ -373,7 +375,7 @@ func TestEnqueueMany_NilPayload(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.EnqueueMany(context.Background(), []*asynqpg.Task{
-		{Type: "test", Payload: nil},
+		{Type: taskTypeTest, Payload: nil},
 	})
 	require.Error(t, err)
 }
@@ -387,7 +389,7 @@ func TestEnqueueMany_RepoError(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.EnqueueMany(context.Background(), []*asynqpg.Task{
-		{Type: "test", Payload: []byte(`{}`)},
+		{Type: taskTypeTest, Payload: []byte(`{}`)},
 	})
 	require.Error(t, err)
 }
@@ -404,8 +406,8 @@ func TestEnqueueManyTx_Success(t *testing.T) {
 	tx := rootmocks.NewTx(t)
 
 	result, err := p.EnqueueManyTx(context.Background(), tx, []*asynqpg.Task{
-		{Type: "test", Payload: []byte(`{"id":1}`)},
-		{Type: "test", Payload: []byte(`{"id":2}`)},
+		{Type: taskTypeTest, Payload: []byte(`{"id":1}`)},
+		{Type: taskTypeTest, Payload: []byte(`{"id":2}`)},
 	})
 	require.NoError(t, err)
 	require.Len(t, result.Results, 2)
@@ -418,7 +420,7 @@ func TestEnqueueManyTx_NilTx(t *testing.T) {
 	p := newTestProducer(repo)
 
 	_, err := p.EnqueueManyTx(context.Background(), nil, []*asynqpg.Task{
-		{Type: "test", Payload: []byte(`{}`)},
+		{Type: taskTypeTest, Payload: []byte(`{}`)},
 	})
 	require.Error(t, err)
 }
@@ -458,7 +460,7 @@ func TestEnqueueManyTx_RepoError(t *testing.T) {
 	tx := rootmocks.NewTx(t)
 
 	_, err := p.EnqueueManyTx(context.Background(), tx, []*asynqpg.Task{
-		{Type: "test", Payload: []byte(`{}`)},
+		{Type: taskTypeTest, Payload: []byte(`{}`)},
 	})
 	require.Error(t, err)
 }
@@ -485,7 +487,7 @@ func TestCalculateDelay_NoDelay(t *testing.T) {
 
 	repo := mocks.NewProducerRepo(t)
 	p := newTestProducer(repo)
-	task := &asynqpg.Task{Type: "test", Payload: []byte(`{}`)}
+	task := &asynqpg.Task{Type: taskTypeTest, Payload: []byte(`{}`)}
 
 	delay := p.calculateDelay(task)
 	require.Equal(t, time.Duration(0), delay)
@@ -496,7 +498,7 @@ func TestCalculateDelay_WithDelay(t *testing.T) {
 
 	repo := mocks.NewProducerRepo(t)
 	p := newTestProducer(repo)
-	task := &asynqpg.Task{Type: "test", Payload: []byte(`{}`), Delay: 5 * time.Second}
+	task := &asynqpg.Task{Type: taskTypeTest, Payload: []byte(`{}`), Delay: 5 * time.Second}
 
 	delay := p.calculateDelay(task)
 	require.Equal(t, 5*time.Second, delay)
@@ -508,7 +510,7 @@ func TestCalculateDelay_ProcessAtOverridesDelay(t *testing.T) {
 	repo := mocks.NewProducerRepo(t)
 	p := newTestProducer(repo)
 	task := &asynqpg.Task{
-		Type:      "test",
+		Type:      taskTypeTest,
 		Payload:   []byte(`{}`),
 		Delay:     time.Hour,
 		ProcessAt: time.Now().Add(10 * time.Second),

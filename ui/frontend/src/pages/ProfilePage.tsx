@@ -1,15 +1,19 @@
-import { Link } from "react-router"
-import { useAuth } from "@/contexts/AuthContext"
-import { LogOut, Settings } from "lucide-react"
+import { useAuth } from "@/contexts/auth"
+import { useTheme, type Theme } from "@/contexts/theme"
+import { Button } from "@/components/Button"
+import { Icon } from "@/components/Icon"
+
+const themeOptions: Array<{ value: Theme; label: string; icon: string }> = [
+  { value: "light", label: "Light", icon: "sun" },
+  { value: "dark", label: "Dark", icon: "moon" },
+  { value: "system", label: "System", icon: "monitor" },
+]
 
 export function ProfilePage() {
-  const { user, logout } = useAuth()
+  const { user, logout, authMode } = useAuth()
+  const { theme, setTheme } = useTheme()
 
-  if (!user) {
-    return null
-  }
-
-  const initials = user.name
+  const initials = user?.name
     ? user.name
         .split(" ")
         .map((n) => n[0])
@@ -19,59 +23,135 @@ export function ProfilePage() {
     : "?"
 
   return (
-    <div className="max-w-lg mx-auto">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-6">Profile</h2>
-
-      <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <div className="flex items-center gap-4 mb-6">
-          {user.avatar_url ? (
-            <img
-              src={user.avatar_url}
-              alt={user.name}
-              className="h-16 w-16 rounded-full"
-            />
-          ) : (
-            <div className="h-16 w-16 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-lg font-medium text-gray-600 dark:text-gray-300">
-              {initials}
-            </div>
-          )}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">{user.name}</h3>
-            {user.email && (
-              <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
-            )}
+    <div>
+      <div className="page-head">
+        <div>
+          <h1>Profile</h1>
+          <div className="sub">
+            {user
+              ? <>signed in as <code style={{ color: "var(--fg-2)" }}>{user.email || user.id}</code></>
+              : "no signed-in user · running without authentication"}
           </div>
-        </div>
-
-        <div className="space-y-3 border-t border-gray-100 dark:border-gray-800 pt-4">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500 dark:text-gray-400">Provider</span>
-            <span className="text-gray-900 dark:text-gray-100 capitalize">{user.provider}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500 dark:text-gray-400">User ID</span>
-            <span className="text-gray-900 dark:text-gray-100 font-mono text-xs">{user.id}</span>
-          </div>
-        </div>
-
-        <div className="border-t border-gray-100 dark:border-gray-800 mt-6 pt-4 flex flex-wrap items-center gap-3">
-          <Link
-            to="/settings"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-md border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          >
-            <Settings className="h-4 w-4" />
-            Settings
-          </Link>
-
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-md border border-red-200 dark:border-red-800 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
-          >
-            <LogOut className="h-4 w-4" />
-            Log out
-          </button>
         </div>
       </div>
+
+      {user && (
+        <div className="section-block">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              border: "1px solid var(--border)",
+              borderRadius: "var(--r-3)",
+              padding: 18,
+              background: "var(--surface-1)",
+            }}
+          >
+            {user.avatar_url ? (
+              <img
+                src={user.avatar_url}
+                alt={user.name}
+                style={{ width: 56, height: 56, borderRadius: "50%" }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: "50%",
+                  display: "grid",
+                  placeItems: "center",
+                  background: "color-mix(in oklch, var(--brand-600) 18%, var(--surface-2))",
+                  color: "var(--brand-600)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 18,
+                  fontWeight: 600,
+                  border: "1px solid color-mix(in oklch, var(--brand-600) 30%, transparent)",
+                }}
+              >
+                {initials}
+              </div>
+            )}
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 15, color: "var(--fg-1)", fontWeight: 500 }}>
+                {user.name || user.email || user.id}
+              </div>
+              {user.email && (
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, color: "var(--fg-3)", marginTop: 2 }}>
+                  {user.email}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {user && (
+        <div className="section-block">
+          <div className="h2">
+            <h2>Identity</h2>
+          </div>
+          <div
+            style={{
+              border: "1px solid var(--border)",
+              borderRadius: "var(--r-3)",
+              overflow: "hidden",
+              background: "var(--bg)",
+            }}
+          >
+            <ProfileRow k="provider" v={user.provider} />
+            <ProfileRow k="user id" v={user.id} last />
+          </div>
+        </div>
+      )}
+
+      <div className="section-block">
+        <div className="h2">
+          <h2>Appearance</h2>
+          <span className="sub">theme follows system preference when set to system</span>
+        </div>
+        <div className="theme-segmented" role="group" aria-label="Theme selection">
+          {themeOptions.map(({ value, label, icon }) => (
+            <button
+              key={value}
+              type="button"
+              className="seg"
+              onClick={() => setTheme(value)}
+              aria-pressed={theme === value}
+            >
+              <Icon name={icon} size={14} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {authMode === "oauth" && user && (
+        <div className="section-block" style={{ display: "flex", gap: 8 }}>
+          <Button variant="danger" onClick={logout} icon="x-circle">
+            Log out
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProfileRow({ k, v, last }: { k: string; v: string; last?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "10px 14px",
+        borderBottom: last ? "none" : "1px solid var(--border)",
+        fontSize: 12.5,
+      }}
+    >
+      <span style={{ color: "var(--fg-3)", fontFamily: "var(--font-mono)" }}>{k}</span>
+      <span style={{ color: "var(--fg-1)", fontFamily: "var(--font-mono)", fontWeight: 500 }}>{v}</span>
     </div>
   )
 }

@@ -4,6 +4,7 @@ import type {
   AuthUser,
   BulkResponse,
   ConfigResponse,
+  LeaderInfo,
   StatsResponse,
   TaskDetail,
   TaskListParams,
@@ -61,9 +62,14 @@ export function getTasks(params: TaskListParams): Promise<TaskListResponse> {
   if (params.order) searchParams.set("order", params.order)
   if (params.created_after) searchParams.set("created_after", params.created_after)
   if (params.created_before) searchParams.set("created_before", params.created_before)
+  if (params.idempotency_token) searchParams.set("idempotency_token", params.idempotency_token)
 
   const qs = searchParams.toString()
   return fetchAPI<TaskListResponse>(`/tasks${qs ? `?${qs}` : ""}`)
+}
+
+export function getLeader(): Promise<LeaderInfo> {
+  return fetchAPI<LeaderInfo>("/cluster/leader")
 }
 
 export function getTask(id: number): Promise<TaskDetail> {

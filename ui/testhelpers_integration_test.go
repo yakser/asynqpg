@@ -31,6 +31,17 @@ func insertPendingTask(t *testing.T, db *sqlx.DB, taskType string, payload []byt
 	return id
 }
 
+func insertPendingTaskWithToken(t *testing.T, db *sqlx.DB, taskType, token string) {
+	t.Helper()
+
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO asynqpg_tasks (type, payload, status, attempts_left, blocked_till, idempotency_token)
+		 VALUES ($1, '{}', 'pending', 3, now(), $2)`,
+		taskType, token,
+	)
+	require.NoError(t, err)
+}
+
 func insertRunningTask(t *testing.T, db *sqlx.DB, taskType string) int64 {
 	t.Helper()
 

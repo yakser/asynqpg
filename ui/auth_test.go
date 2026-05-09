@@ -21,7 +21,7 @@ func TestMemorySessionStore_SaveAndGet(t *testing.T) {
 	ctx := context.Background()
 	sess := &uiauth.Session{
 		Token:     "test-token",
-		User:      uiauth.User{ID: "1", Name: "Alice", Provider: "github"},
+		User:      uiauth.User{ID: "1", Name: testUserName, Provider: testProviderGithub},
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
@@ -31,8 +31,8 @@ func TestMemorySessionStore_SaveAndGet(t *testing.T) {
 	got, err := store.Get(ctx, "test-token")
 	require.NoError(t, err)
 	assert.Equal(t, "test-token", got.Token)
-	assert.Equal(t, "Alice", got.User.Name)
-	assert.Equal(t, "github", got.User.Provider)
+	assert.Equal(t, testUserName, got.User.Name)
+	assert.Equal(t, testProviderGithub, got.User.Provider)
 }
 
 func TestMemorySessionStore_GetNotFound(t *testing.T) {
@@ -53,15 +53,15 @@ func TestMemorySessionStore_GetExpired(t *testing.T) {
 
 	ctx := context.Background()
 	sess := &uiauth.Session{
-		Token:     "expired-token",
-		User:      uiauth.User{ID: "1", Name: "Alice"},
+		Token:     testExpiredToken,
+		User:      uiauth.User{ID: "1", Name: testUserName},
 		CreatedAt: time.Now().Add(-2 * time.Hour),
 		ExpiresAt: time.Now().Add(-time.Hour),
 	}
 
 	require.NoError(t, store.Save(ctx, sess))
 
-	_, err := store.Get(ctx, "expired-token")
+	_, err := store.Get(ctx, testExpiredToken)
 	assert.ErrorIs(t, err, uiauth.ErrSessionNotFound)
 }
 
@@ -181,7 +181,7 @@ func TestGenerateSessionToken_Unique(t *testing.T) {
 func TestUserFromContext_WithUser(t *testing.T) {
 	t.Parallel()
 
-	user := &uiauth.User{ID: "42", Name: "Bob", Provider: "github"}
+	user := &uiauth.User{ID: "42", Name: "Bob", Provider: testProviderGithub}
 	ctx := withUser(context.Background(), user)
 
 	got := UserFromContext(ctx)
@@ -200,7 +200,7 @@ func TestUserFromContext_WithoutUser(t *testing.T) {
 func TestWithUser_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	user := &uiauth.User{ID: "1", Name: "Alice"}
+	user := &uiauth.User{ID: "1", Name: testUserName}
 	ctx := withUser(context.Background(), user)
 	got := UserFromContext(ctx)
 

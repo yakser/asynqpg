@@ -29,11 +29,11 @@ func TestHandleStats(t *testing.T) {
 					return
 				}
 				*stats = []TaskTypeStat{
-					{Type: "email.send", Status: "pending", Count: 10},
-					{Type: "email.send", Status: "failed", Count: 5},
-					{Type: "email.send", Status: "completed", Count: 100},
-					{Type: "report.gen", Status: "pending", Count: 3},
-					{Type: "report.gen", Status: "running", Count: 1},
+					{Type: testTaskTypeEmailSend, Status: statusPending, Count: 10},
+					{Type: testTaskTypeEmailSend, Status: statusFailed, Count: 5},
+					{Type: testTaskTypeEmailSend, Status: statusCompleted, Count: 100},
+					{Type: testTaskTypeReportGen, Status: statusPending, Count: 3},
+					{Type: testTaskTypeReportGen, Status: statusRunning, Count: 1},
 				}
 			}).
 			Return(nil).Maybe()
@@ -63,11 +63,11 @@ func TestHandleStats(t *testing.T) {
 		require.NoError(t, json.Unmarshal(data, &stats))
 
 		assert.Equal(t, int64(119), stats.Total)
-		assert.Equal(t, int64(13), stats.ByStatus["pending"])
-		assert.Equal(t, int64(1), stats.ByStatus["running"])
-		assert.Equal(t, int64(100), stats.ByStatus["completed"])
-		assert.Equal(t, int64(5), stats.ByStatus["failed"])
-		assert.Equal(t, int64(0), stats.ByStatus["cancelled"])
+		assert.Equal(t, int64(13), stats.ByStatus[statusPending])
+		assert.Equal(t, int64(1), stats.ByStatus[statusRunning])
+		assert.Equal(t, int64(100), stats.ByStatus[statusCompleted])
+		assert.Equal(t, int64(5), stats.ByStatus[statusFailed])
+		assert.Equal(t, int64(0), stats.ByStatus[statusCancelled])
 		assert.Len(t, stats.ByType, 2)
 	})
 
@@ -119,7 +119,7 @@ func TestHandleTaskTypes(t *testing.T) {
 				if !ok {
 					return
 				}
-				*types = []string{"email.send", "notification.push", "report.gen"}
+				*types = []string{testTaskTypeEmailSend, "notification.push", testTaskTypeReportGen}
 			}).
 			Return(nil).Maybe()
 
@@ -143,7 +143,7 @@ func TestHandleTaskTypes(t *testing.T) {
 		data, ok := resp.Data.([]any)
 		require.True(t, ok)
 		assert.Len(t, data, 3)
-		assert.Equal(t, "email.send", data[0])
+		assert.Equal(t, testTaskTypeEmailSend, data[0])
 	})
 
 	t.Run("empty returns empty array", func(t *testing.T) {
