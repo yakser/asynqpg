@@ -142,7 +142,7 @@ func TestHandleConfig(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "/asynqpg", data["prefix"])
 		assert.Equal(t, true, data["hide_payload_by_default"])
-		assert.Equal(t, version, data["version"])
+		assert.Equal(t, detectVersion(), data["version"])
 	})
 
 	t.Run("default config", func(t *testing.T) {

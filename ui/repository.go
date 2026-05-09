@@ -2,12 +2,16 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/lib/pq"
 )
+
+// ErrNoLeader is returned by GetLeader when the asynqpg_leader table has no row yet.
+var ErrNoLeader = errors.New("no leader row")
 
 // repository provides database queries specific to the UI layer.
 type repository struct {
@@ -94,6 +98,12 @@ type TaskListResult struct {
 	Total int            `json:"total"`
 }
 
+// IdempotencyTokenFilter values for ListTasksParams.IdempotencyToken.
+const (
+	IdempotencyHas  = "has"
+	IdempotencyNone = "none"
+)
+
 // ListTasksParams contains parameters for listing tasks.
 type ListTasksParams struct {
 	Statuses      []string
@@ -101,10 +111,12 @@ type ListTasksParams struct {
 	IDs           []int64
 	CreatedAfter  *time.Time
 	CreatedBefore *time.Time
-	Limit         int
-	Offset        int
-	OrderBy       string
-	OrderDir      string
+	// IdempotencyToken filters by idempotency_token presence: "has", "none", or "" for unset.
+	IdempotencyToken string
+	Limit            int
+	Offset           int
+	OrderBy          string
+	OrderDir         string
 }
 
 const listTasksColumns = `id, type, status, idempotency_token, messages,
@@ -125,14 +137,22 @@ func (r *repository) ListTasks(ctx context.Context, params ListTasksParams) (*Ta
 		orderDir = "DESC"
 	}
 
+	idempotencyClause := ""
+	switch params.IdempotencyToken {
+	case IdempotencyHas:
+		idempotencyClause = " AND idempotency_token IS NOT NULL"
+	case IdempotencyNone:
+		idempotencyClause = " AND idempotency_token IS NULL"
+	}
+
 	query := fmt.Sprintf(`SELECT %s FROM asynqpg_tasks
 		WHERE ($1::asynqpg_task_status[] IS NULL OR status = ANY($1))
 		  AND ($2::text[] IS NULL OR type = ANY($2))
 		  AND ($3::bigint[] IS NULL OR id = ANY($3))
 		  AND ($6::timestamptz IS NULL OR created_at >= $6)
-		  AND ($7::timestamptz IS NULL OR created_at <= $7)
+		  AND ($7::timestamptz IS NULL OR created_at <= $7)%s
 		ORDER BY %s %s
-		LIMIT $4 OFFSET $5`, listTasksColumns, orderColumn, orderDir)
+		LIMIT $4 OFFSET $5`, listTasksColumns, idempotencyClause, orderColumn, orderDir)
 
 	var statuses, types *pq.StringArray
 	var ids *pq.Int64Array
@@ -158,12 +178,12 @@ func (r *repository) ListTasks(ctx context.Context, params ListTasksParams) (*Ta
 		return nil, fmt.Errorf("list tasks: %w", err)
 	}
 
-	countQuery := `SELECT count(*) FROM asynqpg_tasks
+	countQuery := fmt.Sprintf(`SELECT count(*) FROM asynqpg_tasks
 		WHERE ($1::asynqpg_task_status[] IS NULL OR status = ANY($1))
 		  AND ($2::text[] IS NULL OR type = ANY($2))
 		  AND ($3::bigint[] IS NULL OR id = ANY($3))
 		  AND ($4::timestamptz IS NULL OR created_at >= $4)
-		  AND ($5::timestamptz IS NULL OR created_at <= $5)`
+		  AND ($5::timestamptz IS NULL OR created_at <= $5)%s`, idempotencyClause)
 
 	var total int
 	row := r.db.QueryRowContext(ctx, countQuery, statuses, types, ids,
@@ -181,6 +201,30 @@ func (r *repository) ListTasks(ctx context.Context, params ListTasksParams) (*Ta
 		Tasks: tasks,
 		Total: total,
 	}, nil
+}
+
+// LeaderRow mirrors a row in the asynqpg_leader table.
+type LeaderRow struct {
+	Name      string    `db:"name" json:"name"`
+	LeaderID  string    `db:"leader_id" json:"leader_id"`
+	ElectedAt time.Time `db:"elected_at" json:"elected_at"`
+	ExpiresAt time.Time `db:"expires_at" json:"expires_at"`
+}
+
+// GetLeader returns the current leader row, or ErrNoLeader if no row exists yet.
+func (r *repository) GetLeader(ctx context.Context) (*LeaderRow, error) {
+	var rows []LeaderRow
+	const query = `SELECT name, leader_id, elected_at, expires_at
+		FROM asynqpg_leader
+		WHERE name = 'default'
+		LIMIT 1`
+	if err := r.db.SelectContext(ctx, &rows, query); err != nil {
+		return nil, fmt.Errorf("get leader: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, ErrNoLeader
+	}
+	return &rows[0], nil
 }
 
 const bulkBatchSize = 1000

@@ -207,7 +207,7 @@ func TestElector_Stop_ResignsLeadership(t *testing.T) {
 	require.True(t, found, "expected resign query to be called")
 }
 
-func TestElector_ElectsLeader_RowsAffected1(t *testing.T) {
+func TestElector_ElectsLeader_RowsAffected(t *testing.T) {
 	t.Parallel()
 
 	db := mocks.NewDbExecer(t)

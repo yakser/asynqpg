@@ -98,6 +98,7 @@ func (h *handler) registerRoutes(mux *http.ServeMux) {
 	protected.HandleFunc("DELETE /api/tasks/{id}", h.handleDeleteTask)
 	protected.HandleFunc("POST /api/tasks/bulk/retry", h.handleBulkRetry)
 	protected.HandleFunc("POST /api/tasks/bulk/delete", h.handleBulkDelete)
+	protected.HandleFunc("GET /api/cluster/leader", h.handleClusterLeader)
 
 	if h.oauthEnabled() {
 		protected.HandleFunc("GET /api/auth/me", h.handleAuthMe)
@@ -144,12 +145,10 @@ func (h *handler) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, configResponse{
 		Prefix:               h.opts.Prefix,
 		HidePayloadByDefault: h.opts.HidePayloadByDefault,
-		Version:              version,
+		Version:              h.opts.Version,
 		AuthMode:             h.opts.authMode(),
 	})
 }
-
-const version = "0.1.0"
 
 // parseTaskID extracts and validates the task ID from the URL path.
 func parseTaskID(r *http.Request) (int64, error) {

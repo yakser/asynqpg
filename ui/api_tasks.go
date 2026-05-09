@@ -234,5 +234,12 @@ func parseListParams(r *http.Request) (*ListTasksParams, error) {
 		params.CreatedBefore = &t
 	}
 
+	if v := r.URL.Query().Get("idempotency_token"); v != "" {
+		if v != IdempotencyHas && v != IdempotencyNone {
+			return nil, errors.New("idempotency_token must be 'has' or 'none'")
+		}
+		params.IdempotencyToken = v
+	}
+
 	return params, nil
 }

@@ -737,6 +737,88 @@ func TestBulkDeleteFailed_SkipsNonFailedTasks(t *testing.T) {
 	assert.Equal(t, 2, result.Total)
 }
 
+// --- Idempotency token filter ---
+
+func TestListTasks_FilterByIdempotencyTokenPresence(t *testing.T) {
+	t.Parallel()
+
+	uiRepo, db := setupRepo(t)
+	ctx := context.Background()
+
+	insertPendingTaskWithToken(t, db, "list-idem", "tok-abc")
+	insertPendingTaskWithToken(t, db, "list-idem", "tok-def")
+	insertPendingTask(t, db, "list-idem", []byte(`{}`))
+	insertPendingTask(t, db, "list-idem", []byte(`{}`))
+
+	hasResult, err := uiRepo.ListTasks(ctx, ListTasksParams{
+		Types:            []string{"list-idem"},
+		IdempotencyToken: "has",
+		Limit:            100,
+		OrderBy:          "id",
+		OrderDir:         "ASC",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, hasResult.Total)
+	for _, task := range hasResult.Tasks {
+		require.NotNil(t, task.IdempotencyToken)
+	}
+
+	noneResult, err := uiRepo.ListTasks(ctx, ListTasksParams{
+		Types:            []string{"list-idem"},
+		IdempotencyToken: "none",
+		Limit:            100,
+		OrderBy:          "id",
+		OrderDir:         "ASC",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, noneResult.Total)
+	for _, task := range noneResult.Tasks {
+		assert.Nil(t, task.IdempotencyToken)
+	}
+}
+
+// --- GetLeader ---
+
+func TestGetLeader_NoRow(t *testing.T) {
+	t.Parallel()
+
+	uiRepo, _ := setupRepo(t)
+	ctx := context.Background()
+
+	row, err := uiRepo.GetLeader(ctx)
+
+	require.ErrorIs(t, err, ErrNoLeader)
+	assert.Nil(t, row)
+}
+
+func TestGetLeader_ReturnsRow(t *testing.T) {
+	t.Parallel()
+
+	uiRepo, db := setupRepo(t)
+	ctx := context.Background()
+
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO asynqpg_leader (name, leader_id, elected_at, expires_at)
+		 VALUES ('default', 'consumer-test-1', now() - interval '5 seconds', now() + interval '55 seconds')
+		 ON CONFLICT (name) DO UPDATE SET
+			 leader_id = EXCLUDED.leader_id,
+			 elected_at = EXCLUDED.elected_at,
+			 expires_at = EXCLUDED.expires_at`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(),
+			`DELETE FROM asynqpg_leader WHERE name = 'default'`)
+	})
+
+	row, err := uiRepo.GetLeader(ctx)
+
+	require.NoError(t, err)
+	require.NotNil(t, row)
+	assert.Equal(t, "default", row.Name)
+	assert.Equal(t, "consumer-test-1", row.LeaderID)
+	assert.True(t, row.ExpiresAt.After(row.ElectedAt))
+}
+
 func TestBulkDeleteFailed_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 

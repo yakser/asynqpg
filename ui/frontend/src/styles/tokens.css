@@ -1,0 +1,372 @@
+/* ============================================================================
+   asynqpg design tokens
+   ----------------------------------------------------------------------------
+   Drop-in CSS custom properties for the asynqpg landing page and adjacent
+   surfaces. Light theme is the default; `[data-theme="dark"]` (preferred)
+   or `prefers-color-scheme: dark` activates dark theme.
+
+   Color values use oklch() for perceptually-uniform tuning. Fallback hex
+   values are inlined as comments next to each var for tooling that does
+   not yet parse oklch().
+   ============================================================================ */
+
+@import url("./fonts/fonts.css");
+
+/* ---------- TYPOGRAPHY (theme-independent) -------------------------------- */
+:root {
+  /* Families */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system,
+               "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Menlo",
+               "Consolas", monospace;
+
+  /* Type scale (modular 1.200 anchored at 16px) */
+  --fs-display: 64px;
+  --fs-h1:      44px;
+  --fs-h2:      32px;
+  --fs-h3:      22px;
+  --fs-h4:      18px;
+  --fs-body:    16px;
+  --fs-small:   14px;
+  --fs-eyebrow: 12px;
+  --fs-code:    14px;
+
+  /* Line heights */
+  --lh-display: 1.05;
+  --lh-h1:      1.10;
+  --lh-h2:      1.15;
+  --lh-h3:      1.30;
+  --lh-body:    1.60;
+  --lh-tight:   1.40;
+
+  /* Tracking */
+  --tr-display: -0.02em;
+  --tr-h1:      -0.015em;
+  --tr-h2:      -0.010em;
+  --tr-h3:      -0.005em;
+  --tr-eyebrow:  0.080em;
+
+  /* Weights */
+  --fw-regular:   400;
+  --fw-medium:    500;
+  --fw-semibold:  600;
+  --fw-bold:      700;
+
+  /* ---------- SPACING (4px base) ---------------------------------------- */
+  --sp-0:   0;
+  --sp-1:   4px;
+  --sp-2:   8px;
+  --sp-3:   12px;
+  --sp-4:   16px;
+  --sp-5:   20px;
+  --sp-6:   24px;
+  --sp-8:   32px;
+  --sp-10:  40px;
+  --sp-12:  48px;
+  --sp-16:  64px;
+  --sp-20:  80px;
+  --sp-24:  96px;
+  --sp-32:  128px;
+
+  /* ---------- RADII ------------------------------------------------------- */
+  --r-0: 0;
+  --r-1: 4px;   /* chips, badges */
+  --r-2: 6px;   /* inputs, buttons */
+  --r-3: 8px;   /* cards, code blocks */
+  --r-4: 12px;  /* modals only */
+  --r-full: 9999px;
+
+  /* ---------- BORDER WIDTHS ---------------------------------------------- */
+  --bw-1: 1px; /* hairline — the only border width on the page */
+
+  /* ---------- LAYOUT ----------------------------------------------------- */
+  --container:        1200px;
+  --container-prose:  720px;
+  --section-y-desktop: var(--sp-24);
+  --section-y-tablet:  var(--sp-16);
+  --section-y-mobile:  var(--sp-12);
+
+  /* ---------- MOTION ----------------------------------------------------- */
+  --ease:     cubic-bezier(0.2, 0.6, 0.2, 1);
+  --dur-micro: 120ms;
+  --dur-base:  220ms;
+  --dur-page:  360ms;
+
+  /* ---------- ELEVATION (overlay only) ----------------------------------- */
+  --shadow-overlay: 0 8px 24px -8px rgba(8, 14, 24, 0.18),
+                    0 2px 6px -2px rgba(8, 14, 24, 0.08);
+}
+
+/* ============================================================================
+   LIGHT THEME (default)
+   ============================================================================ */
+:root,
+[data-theme="light"] {
+  /* Brand: vivid royal blue, anchored at #4a72f5 (brand-600). */
+  --brand-50:  oklch(96% 0.025 263);  /* #eef2ff */
+  --brand-100: oklch(92% 0.045 263);  /* #dbe3fe */
+  --brand-200: oklch(85% 0.080 263);  /* #b9c5fc */
+  --brand-300: oklch(76% 0.130 263);  /* #8b9efa */
+  --brand-400: oklch(68% 0.170 263);  /* #6c84f7 */
+  --brand-500: oklch(63% 0.195 263);  /* #587bf6 */
+  --brand-600: oklch(60% 0.210 263);  /* #4a72f5 — primary */
+  --brand-700: oklch(53% 0.215 263);  /* #3a5ed6 */
+  --brand-800: oklch(44% 0.190 263);  /* #2c4aa8 */
+  --brand-900: oklch(34% 0.150 263);  /* #1f3680 */
+
+  /* Cool slate neutrals */
+  --slate-0:   oklch(99.5% 0.003 240); /* near-white, faint cool */
+  --slate-50:  oklch(98%   0.005 240);
+  --slate-100: oklch(96%   0.007 240);
+  --slate-200: oklch(92%   0.010 240);
+  --slate-300: oklch(85%   0.013 240);
+  --slate-400: oklch(70%   0.015 240);
+  --slate-500: oklch(56%   0.017 240);
+  --slate-600: oklch(44%   0.018 240);
+  --slate-700: oklch(33%   0.018 240);
+  --slate-800: oklch(23%   0.016 240);
+  --slate-900: oklch(15%   0.012 240);
+  --slate-950: oklch(10%   0.010 240);
+
+  /* Semantic surfaces */
+  --bg:          var(--slate-0);
+  --surface-1:   var(--slate-50);   /* cards, code blocks */
+  --surface-2:   #ffffff;           /* raised: floating nav, popovers */
+  --surface-inset: var(--slate-100); /* recessed inputs */
+
+  /* Borders */
+  --border:        var(--slate-200);
+  --border-strong: var(--slate-300);
+  --border-brand:  var(--brand-600);
+
+  /* Foregrounds */
+  --fg-1: var(--slate-900); /* heads, emphasis */
+  --fg-2: var(--slate-700); /* body */
+  --fg-3: var(--slate-500); /* captions, eyebrows */
+  --fg-4: var(--slate-400); /* placeholders */
+  --fg-on-brand: #ffffff;
+
+  /* Status colors — borrowed from the dashboard task lifecycle */
+  --status-pending:    oklch(70% 0.150 75);   /* amber  #d49a2c */
+  --status-running:    oklch(58% 0.160 245);  /* blue   #3a72c8 */
+  --status-completed:  oklch(60% 0.140 150);  /* green  #2f9e57 */
+  --status-failed:     oklch(58% 0.190 25);   /* red    #d3492a */
+  --status-cancelled:  oklch(60% 0.010 240);  /* gray   #818b97 */
+
+  /* Status backgrounds (for chips) */
+  --status-pending-bg:    oklch(96% 0.045 75);
+  --status-running-bg:    oklch(96% 0.030 245);
+  --status-completed-bg:  oklch(96% 0.040 150);
+  --status-failed-bg:     oklch(96% 0.040 25);
+  --status-cancelled-bg:  oklch(96% 0.005 240);
+
+  /* Focus */
+  --focus-ring: var(--brand-600);
+
+  /* Code-block syntax-highlight palette (Plex-friendly, high-contrast) */
+  --code-bg:       var(--surface-1);
+  --code-fg:       var(--slate-800);
+  --code-comment:  var(--slate-500);
+  --code-keyword:  oklch(46% 0.140 295);  /* purple */
+  --code-string:   oklch(48% 0.140 145);  /* green */
+  --code-number:   oklch(54% 0.140 60);   /* amber */
+  --code-fn:       var(--brand-600);
+  --code-type:     oklch(45% 0.130 200);  /* teal */
+  --code-punct:    var(--slate-600);
+  --code-tag:      oklch(50% 0.160 25);   /* coral, for diff +/- */
+}
+
+/* ============================================================================
+   DARK THEME
+   ============================================================================ */
+[data-theme="dark"] {
+  /* Brand: lifted for dark-bg contrast, same hue (royal blue 263). */
+  --brand-50:  oklch(22% 0.060 263);
+  --brand-100: oklch(28% 0.090 263);
+  --brand-200: oklch(36% 0.130 263);
+  --brand-300: oklch(48% 0.180 263);
+  --brand-400: oklch(60% 0.210 263);
+  --brand-500: oklch(68% 0.200 263);
+  --brand-600: oklch(74% 0.180 263);   /* primary on dark */
+  --brand-700: oklch(82% 0.140 263);
+  --brand-800: oklch(89% 0.090 263);
+  --brand-900: oklch(94% 0.045 263);
+
+  --slate-0:   oklch(10%   0.012 240);
+  --slate-50:  oklch(13%   0.012 240);
+  --slate-100: oklch(16%   0.014 240);
+  --slate-200: oklch(20%   0.014 240);
+  --slate-300: oklch(26%   0.014 240);
+  --slate-400: oklch(40%   0.016 240);
+  --slate-500: oklch(56%   0.017 240);
+  --slate-600: oklch(70%   0.015 240);
+  --slate-700: oklch(82%   0.012 240);
+  --slate-800: oklch(90%   0.010 240);
+  --slate-900: oklch(96%   0.006 240);
+  --slate-950: oklch(99%   0.003 240);
+
+  --bg:          var(--slate-0);
+  --surface-1:   var(--slate-50);
+  --surface-2:   var(--slate-100);
+  --surface-inset: oklch(8% 0.012 240);
+
+  --border:        var(--slate-200);
+  --border-strong: var(--slate-300);
+  --border-brand:  var(--brand-600);
+
+  --fg-1: var(--slate-900);
+  --fg-2: var(--slate-700);
+  --fg-3: var(--slate-500);
+  --fg-4: var(--slate-400);
+  --fg-on-brand: oklch(12% 0.014 240);
+
+  /* Status — slightly desaturated and lifted for dark bg */
+  --status-pending:   oklch(78% 0.150 75);
+  --status-running:   oklch(72% 0.140 245);
+  --status-completed: oklch(72% 0.140 150);
+  --status-failed:    oklch(70% 0.180 25);
+  --status-cancelled: oklch(64% 0.010 240);
+
+  --status-pending-bg:    oklch(22% 0.060 75);
+  --status-running-bg:    oklch(22% 0.050 245);
+  --status-completed-bg:  oklch(22% 0.060 150);
+  --status-failed-bg:     oklch(22% 0.060 25);
+  --status-cancelled-bg:  oklch(22% 0.008 240);
+
+  --focus-ring: var(--brand-600);
+
+  --code-bg:      oklch(11% 0.014 240); /* recessed against page */
+  --code-fg:      var(--slate-800);
+  --code-comment: var(--slate-500);
+  --code-keyword: oklch(74% 0.130 295);
+  --code-string:  oklch(74% 0.130 145);
+  --code-number:  oklch(78% 0.130 60);
+  --code-fn:      var(--brand-600);
+  --code-type:    oklch(74% 0.110 200);
+  --code-punct:   var(--slate-600);
+  --code-tag:     oklch(72% 0.160 25);
+
+  --shadow-overlay: 0 8px 24px -8px rgba(0, 0, 0, 0.6),
+                    0 2px 6px -2px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================================================
+   SEMANTIC ELEMENT DEFAULTS
+   ============================================================================ */
+html { color-scheme: light dark; }
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  font-weight: var(--fw-regular);
+  color: var(--fg-2);
+  background: var(--bg);
+  font-feature-settings: "ss01", "ss02", "cv11"; /* Plex stylistic alternates */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, .h1 {
+  font-size: var(--fs-h1);
+  line-height: var(--lh-h1);
+  letter-spacing: var(--tr-h1);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+  text-wrap: balance;
+}
+h2, .h2 {
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  letter-spacing: var(--tr-h2);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+  text-wrap: balance;
+}
+h3, .h3 {
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  letter-spacing: var(--tr-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+}
+h4, .h4 {
+  font-size: var(--fs-h4);
+  line-height: var(--lh-tight);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+}
+
+.display {
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  letter-spacing: var(--tr-display);
+  font-weight: var(--fw-semibold);
+  color: var(--fg-1);
+  text-wrap: balance;
+}
+
+.eyebrow {
+  font-size: var(--fs-eyebrow);
+  line-height: 1;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  font-weight: var(--fw-medium);
+  color: var(--fg-3);
+}
+
+p { color: var(--fg-2); text-wrap: pretty; }
+small, .small { font-size: var(--fs-small); line-height: 1.5; }
+
+a {
+  color: var(--brand-600);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in oklch, var(--brand-600) 35%, transparent);
+  transition: color var(--dur-micro) var(--ease),
+              text-decoration-color var(--dur-micro) var(--ease);
+}
+a:hover {
+  color: var(--brand-500);
+  text-decoration-color: var(--brand-500);
+}
+
+code, kbd, pre, samp { font-family: var(--font-mono); font-size: var(--fs-code); }
+
+code:not(pre code) {
+  background: var(--surface-1);
+  border: var(--bw-1) solid var(--border);
+  border-radius: var(--r-1);
+  padding: 1px 6px;
+  color: var(--fg-1);
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+
+pre {
+  background: var(--code-bg);
+  border: var(--bw-1) solid var(--border);
+  border-radius: var(--r-3);
+  color: var(--code-fg);
+  padding: var(--sp-5);
+  overflow-x: auto;
+  line-height: 1.55;
+}
+
+hr {
+  border: none;
+  border-top: var(--bw-1) solid var(--border);
+  margin: var(--sp-12) 0;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--brand-600) 30%, transparent);
+  color: var(--fg-1);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

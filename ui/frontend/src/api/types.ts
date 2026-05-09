@@ -81,4 +81,12 @@ export interface TaskListParams {
   order?: "ASC" | "DESC"
   created_after?: string
   created_before?: string
+  idempotency_token?: "has" | "none"
+}
+
+export interface LeaderInfo {
+  leader_id: string
+  elected_at: string | null
+  expires_at: string | null
+  lease_ttl_seconds: number
 }

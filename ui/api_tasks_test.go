@@ -148,6 +148,39 @@ func TestParseListParams(t *testing.T) {
 
 		require.Error(t, err)
 	})
+
+	t.Run("idempotency_token=has", func(t *testing.T) {
+		t.Parallel()
+
+		r := httptest.NewRequest(http.MethodGet, "/api/tasks?idempotency_token=has", nil)
+
+		params, err := parseListParams(r)
+
+		require.NoError(t, err)
+		assert.Equal(t, "has", params.IdempotencyToken)
+	})
+
+	t.Run("idempotency_token=none", func(t *testing.T) {
+		t.Parallel()
+
+		r := httptest.NewRequest(http.MethodGet, "/api/tasks?idempotency_token=none", nil)
+
+		params, err := parseListParams(r)
+
+		require.NoError(t, err)
+		assert.Equal(t, "none", params.IdempotencyToken)
+	})
+
+	t.Run("idempotency_token invalid", func(t *testing.T) {
+		t.Parallel()
+
+		r := httptest.NewRequest(http.MethodGet, "/api/tasks?idempotency_token=maybe", nil)
+
+		_, err := parseListParams(r)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "idempotency_token")
+	})
 }
 
 func TestTaskInfoToDetailResponse(t *testing.T) {

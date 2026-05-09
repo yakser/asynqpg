@@ -55,6 +55,15 @@ type HandlerOpts struct {
 	// AllowedOrigins configures CORS allowed origins.
 	// If empty, only same-origin requests are allowed.
 	AllowedOrigins []string
+
+	// Version is the version string returned by /api/config and shown in
+	// the dashboard. When empty, it is auto-detected from runtime build
+	// info (debug.ReadBuildInfo); the detected value is the asynqpg/ui
+	// module version of the binary that imported this package, or
+	// "(devel)" for local/replaced builds. Set this explicitly when you
+	// build with linker flags such as `-ldflags '-X my/pkg.Version=...'`
+	// and want that value surfaced in the dashboard.
+	Version string
 }
 
 // BasicAuth holds credentials for HTTP Basic Authentication.
@@ -102,6 +111,10 @@ func (o *HandlerOpts) setDefaults() {
 
 	if o.Logger == nil {
 		o.Logger = slog.Default()
+	}
+
+	if o.Version == "" {
+		o.Version = detectVersion()
 	}
 
 	if len(o.AuthProviders) > 0 {
