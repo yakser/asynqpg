@@ -15,6 +15,8 @@ import (
 	"github.com/yakser/asynqpg/internal/repository"
 )
 
+const taskTypeEmail = "email"
+
 func TestCleanerConfig_SetDefaults(t *testing.T) {
 	t.Parallel()
 
@@ -227,8 +229,8 @@ func TestRescuer_RunOnce_RetryTasks(t *testing.T) {
 
 	repo := mocks.NewRescuerRepo(t)
 	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
-		{ID: 1, Type: "email", AttemptsLeft: 2, AttemptsElapsed: 1},
-		{ID: 2, Type: "email", AttemptsLeft: 1, AttemptsElapsed: 2},
+		{ID: 1, Type: taskTypeEmail, AttemptsLeft: 2, AttemptsElapsed: 1},
+		{ID: 2, Type: taskTypeEmail, AttemptsLeft: 1, AttemptsElapsed: 2},
 	}, nil).Once()
 
 	var retryParams []repository.RetryTaskParams
@@ -257,7 +259,7 @@ func TestRescuer_RunOnce_DiscardTasks(t *testing.T) {
 
 	repo := mocks.NewRescuerRepo(t)
 	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
-		{ID: 10, Type: "email", AttemptsLeft: 0, AttemptsElapsed: 3},
+		{ID: 10, Type: taskTypeEmail, AttemptsLeft: 0, AttemptsElapsed: 3},
 		{ID: 11, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 5},
 	}, nil).Once()
 
@@ -287,9 +289,9 @@ func TestRescuer_RunOnce_MixedTasks(t *testing.T) {
 
 	repo := mocks.NewRescuerRepo(t)
 	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
-		{ID: 1, Type: "email", AttemptsLeft: 2, AttemptsElapsed: 1}, // retry
-		{ID: 2, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 3},   // discard
-		{ID: 3, Type: "push", AttemptsLeft: 1, AttemptsElapsed: 2},  // retry
+		{ID: 1, Type: taskTypeEmail, AttemptsLeft: 2, AttemptsElapsed: 1}, // retry
+		{ID: 2, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 3},         // discard
+		{ID: 3, Type: "push", AttemptsLeft: 1, AttemptsElapsed: 2},        // retry
 	}, nil).Once()
 
 	repo.EXPECT().RetryTask(mock.Anything, mock.Anything).Return(nil).Times(2)

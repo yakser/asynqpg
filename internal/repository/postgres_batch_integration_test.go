@@ -15,6 +15,15 @@ import (
 	"github.com/yakser/asynqpg/testutils"
 )
 
+const (
+	taskTypeBatch    = "batch-test"
+	taskTypeComplete = "complete-test"
+	taskTypeFail     = "fail-test"
+	taskTypeFailMsg  = "fail-msg-test"
+	taskTypeRetry    = "retry-test"
+	taskTypeMixed    = "mixed-test"
+)
+
 func TestPushTasks_Basic(t *testing.T) {
 	t.Parallel()
 
@@ -23,9 +32,9 @@ func TestPushTasks_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	tasks := []repository.PushTaskParams{
-		{Type: "batch-test", Payload: []byte(`{"id":1}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
-		{Type: "batch-test", Payload: []byte(`{"id":2}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
-		{Type: "batch-test", Payload: []byte(`{"id":3}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeBatch, Payload: []byte(`{"id":1}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeBatch, Payload: []byte(`{"id":2}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeBatch, Payload: []byte(`{"id":3}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
 	}
 
 	results, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
@@ -58,7 +67,7 @@ func TestPushTasks_Idempotency(t *testing.T) {
 
 	token := "unique-token-1"
 	tasks := []repository.PushTaskParams{
-		{Type: "batch-test", Payload: []byte(`{"id":1}`), AttemptsLeft: 3, Delay: db.NewDuration(0), IdempotencyToken: &token},
+		{Type: taskTypeBatch, Payload: []byte(`{"id":1}`), AttemptsLeft: 3, Delay: db.NewDuration(0), IdempotencyToken: &token},
 	}
 
 	// First insert
@@ -84,15 +93,15 @@ func TestCompleteTasksMany_Basic(t *testing.T) {
 
 	// Create and fetch tasks to set them to 'running' status
 	tasks := []repository.PushTaskParams{
-		{Type: "complete-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
-		{Type: "complete-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeComplete, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeComplete, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
 	}
 	_, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
 
 	// Fetch to set status to 'running'
 	readyTasks, err := repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type:  "complete-test",
+		Type:  taskTypeComplete,
 		Limit: 10,
 		Delay: time.Minute,
 	})
@@ -138,13 +147,13 @@ func TestCompleteTasksMany_AlreadyCompleted(t *testing.T) {
 
 	// Create and complete a task
 	tasks := []repository.PushTaskParams{
-		{Type: "complete-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeComplete, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
 	}
 	_, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
 
 	readyTasks, err := repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type:  "complete-test",
+		Type:  taskTypeComplete,
 		Limit: 1,
 		Delay: time.Minute,
 	})
@@ -170,14 +179,14 @@ func TestFailTasksMany_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	tasks := []repository.PushTaskParams{
-		{Type: "fail-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
-		{Type: "fail-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeFail, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeFail, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
 	}
 	_, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
 
 	readyTasks, err := repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type:  "fail-test",
+		Type:  taskTypeFail,
 		Limit: 10,
 		Delay: time.Minute,
 	})
@@ -200,14 +209,14 @@ func TestFailTasksMany_DifferentMessages(t *testing.T) {
 	ctx := context.Background()
 
 	tasks := []repository.PushTaskParams{
-		{Type: "fail-msg-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
-		{Type: "fail-msg-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeFailMsg, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeFailMsg, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
 	}
 	_, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
 
 	readyTasks, err := repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type:  "fail-msg-test",
+		Type:  taskTypeFailMsg,
 		Limit: 10,
 		Delay: time.Minute,
 	})
@@ -245,14 +254,14 @@ func TestRetryTasksMany_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	tasks := []repository.PushTaskParams{
-		{Type: "retry-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
-		{Type: "retry-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeRetry, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeRetry, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
 	}
 	_, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
 
 	readyTasks, err := repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type:  "retry-test",
+		Type:  taskTypeRetry,
 		Limit: 10,
 		Delay: time.Minute,
 	})
@@ -300,16 +309,16 @@ func TestRetryTasksMany_MixedStates(t *testing.T) {
 
 	// Create 3 tasks
 	tasks := []repository.PushTaskParams{
-		{Type: "mixed-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
-		{Type: "mixed-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
-		{Type: "mixed-test", Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeMixed, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeMixed, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
+		{Type: taskTypeMixed, Payload: []byte(`{}`), AttemptsLeft: 3, Delay: db.NewDuration(0)},
 	}
 	_, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
 
 	// Fetch all to set to 'running'
 	readyTasks, err := repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type:  "mixed-test",
+		Type:  taskTypeMixed,
 		Limit: 10,
 		Delay: time.Minute,
 	})

@@ -17,7 +17,11 @@ import (
 	"github.com/yakser/asynqpg/internal/leadership/mocks"
 )
 
-const testElectorGroup = "test-group"
+const (
+	testElectorGroup    = "test-group"
+	testElectorClientID = "test-client"
+	testElectorPlainID  = "test"
+)
 
 // testSQLResult implements sql.Result for use in mock return values.
 type testSQLResult struct {
@@ -380,7 +384,7 @@ func TestElector_DeletesExpiredLeaders(t *testing.T) {
 		Return(&testSQLResult{rowsAffected: 1}, nil).Maybe()
 
 	e := NewElector(db, ElectorConfig{
-		ClientID:      "test-client",
+		ClientID:      testElectorClientID,
 		Name:          testElectorGroup,
 		ElectInterval: 50 * time.Millisecond,
 	})
@@ -423,7 +427,7 @@ func TestElector_ElectionSQL_InsertOnConflict(t *testing.T) {
 		Return(&testSQLResult{rowsAffected: 1}, nil).Maybe()
 
 	e := NewElector(db, ElectorConfig{
-		ClientID:      "test-client",
+		ClientID:      testElectorClientID,
 		Name:          testElectorGroup,
 		ElectInterval: 50 * time.Millisecond,
 		TTL:           150 * time.Millisecond,
@@ -441,7 +445,7 @@ func TestElector_ElectionSQL_InsertOnConflict(t *testing.T) {
 	mu.Lock()
 	require.Len(t, capturedInsertArgs, 4, "insert: expected 4 args (name, client_id, now, expires_at)")
 	require.Equal(t, testElectorGroup, capturedInsertArgs[0])
-	require.Equal(t, "test-client", capturedInsertArgs[1])
+	require.Equal(t, testElectorClientID, capturedInsertArgs[1])
 	mu.Unlock()
 }
 
@@ -706,7 +710,7 @@ func TestAttemptElect_Success(t *testing.T) {
 		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(&testSQLResult{rowsAffected: 1}, nil).Once()
 
-	e := NewElector(db, ElectorConfig{ClientID: "test"})
+	e := NewElector(db, ElectorConfig{ClientID: testElectorPlainID})
 
 	elected, err := e.attemptElect(context.Background())
 
@@ -725,7 +729,7 @@ func TestAttemptElect_NotElected(t *testing.T) {
 		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(&testSQLResult{rowsAffected: 0}, nil).Once()
 
-	e := NewElector(db, ElectorConfig{ClientID: "test"})
+	e := NewElector(db, ElectorConfig{ClientID: testElectorPlainID})
 
 	elected, err := e.attemptElect(context.Background())
 
@@ -749,7 +753,7 @@ func TestResign_Success(t *testing.T) {
 		}).
 		Return(&testSQLResult{rowsAffected: 1}, nil).Once()
 
-	e := NewElector(db, ElectorConfig{ClientID: "test-client", Name: testElectorGroup})
+	e := NewElector(db, ElectorConfig{ClientID: testElectorClientID, Name: testElectorGroup})
 	e.isLeader.Store(true)
 
 	err := e.resign(context.Background())
@@ -759,7 +763,7 @@ func TestResign_Success(t *testing.T) {
 
 	mu.Lock()
 	require.Equal(t, testElectorGroup, capturedArgs[0])
-	require.Equal(t, "test-client", capturedArgs[1])
+	require.Equal(t, testElectorClientID, capturedArgs[1])
 	mu.Unlock()
 }
 
@@ -771,7 +775,7 @@ func TestResign_Error(t *testing.T) {
 		ExecContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, fmt.Errorf("db error")).Once()
 
-	e := NewElector(db, ElectorConfig{ClientID: "test"})
+	e := NewElector(db, ElectorConfig{ClientID: testElectorPlainID})
 
 	err := e.resign(context.Background())
 

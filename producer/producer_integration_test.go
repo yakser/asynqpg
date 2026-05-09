@@ -18,6 +18,11 @@ import (
 	"github.com/yakser/asynqpg/testutils"
 )
 
+const (
+	prodTaskTypeSingle = "test-task"
+	prodTaskTypeBatch  = "batch-task"
+)
+
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -54,7 +59,7 @@ func TestEnqueue(t *testing.T) {
 
 		token := "enqueue-test-" + t.Name()
 		_, err = p.Enqueue(t.Context(), &asynqpg.Task{
-			Type:             "test-task",
+			Type:             prodTaskTypeSingle,
 			Payload:          []byte(`{"key": "value"}`),
 			IdempotencyToken: ptr.Get(token),
 		})
@@ -62,7 +67,7 @@ func TestEnqueue(t *testing.T) {
 
 		task, err := testutils.GetTaskByIdempotencyToken(t, db, token)
 		require.NoError(t, err)
-		assert.Equal(t, "test-task", task.Type)
+		assert.Equal(t, prodTaskTypeSingle, task.Type)
 		assert.Equal(t, []byte(`{"key": "value"}`), task.Payload)
 		assert.Equal(t, "pending", task.Status)
 	})
@@ -180,7 +185,7 @@ func TestEnqueueTx(t *testing.T) {
 
 		token := "commit-test-" + t.Name()
 		_, err = p.EnqueueTx(ctx, tx, &asynqpg.Task{
-			Type:             "test-task",
+			Type:             prodTaskTypeSingle,
 			Payload:          []byte(`{"tx": "commit"}`),
 			IdempotencyToken: ptr.Get(token),
 		})
@@ -196,7 +201,7 @@ func TestEnqueueTx(t *testing.T) {
 
 		task, err := testutils.GetTaskByIdempotencyToken(t, db, token)
 		require.NoError(t, err)
-		assert.Equal(t, "test-task", task.Type)
+		assert.Equal(t, prodTaskTypeSingle, task.Type)
 		assert.Equal(t, []byte(`{"tx": "commit"}`), task.Payload)
 	})
 
@@ -213,7 +218,7 @@ func TestEnqueueTx(t *testing.T) {
 
 		token := "rollback-test-" + t.Name()
 		_, err = p.EnqueueTx(ctx, tx, &asynqpg.Task{
-			Type:             "test-task",
+			Type:             prodTaskTypeSingle,
 			Payload:          []byte(`{"tx": "rollback"}`),
 			IdempotencyToken: ptr.Get(token),
 		})
@@ -467,9 +472,9 @@ func TestEnqueueMany(t *testing.T) {
 		require.NoError(t, err)
 
 		tasks := []*asynqpg.Task{
-			{Type: "batch-task", Payload: []byte(`{"id":1}`)},
-			{Type: "batch-task", Payload: []byte(`{"id":2}`)},
-			{Type: "batch-task", Payload: []byte(`{"id":3}`)},
+			{Type: prodTaskTypeBatch, Payload: []byte(`{"id":1}`)},
+			{Type: prodTaskTypeBatch, Payload: []byte(`{"id":2}`)},
+			{Type: prodTaskTypeBatch, Payload: []byte(`{"id":3}`)},
 		}
 
 		result, err := p.EnqueueMany(t.Context(), tasks)
@@ -503,7 +508,7 @@ func TestEnqueueMany(t *testing.T) {
 
 		token := "batch-idemp-" + t.Name()
 		tasks := []*asynqpg.Task{
-			{Type: "batch-task", Payload: []byte(`{}`), IdempotencyToken: ptr.Get(token)},
+			{Type: prodTaskTypeBatch, Payload: []byte(`{}`), IdempotencyToken: ptr.Get(token)},
 		}
 
 		// First insert
@@ -528,9 +533,9 @@ func TestEnqueueMany(t *testing.T) {
 		require.NoError(t, err)
 
 		tasks := []*asynqpg.Task{
-			{Type: "batch-task", Payload: []byte(`{}`)},
+			{Type: prodTaskTypeBatch, Payload: []byte(`{}`)},
 			nil,
-			{Type: "batch-task", Payload: []byte(`{}`)},
+			{Type: prodTaskTypeBatch, Payload: []byte(`{}`)},
 		}
 
 		_, err = p.EnqueueMany(t.Context(), tasks)
@@ -546,7 +551,7 @@ func TestEnqueueMany(t *testing.T) {
 		require.NoError(t, err)
 
 		tasks := []*asynqpg.Task{
-			{Type: "batch-task", Payload: []byte(`{}`)},
+			{Type: prodTaskTypeBatch, Payload: []byte(`{}`)},
 			{Type: "", Payload: []byte(`{}`)},
 		}
 
@@ -563,8 +568,8 @@ func TestEnqueueMany(t *testing.T) {
 		require.NoError(t, err)
 
 		tasks := []*asynqpg.Task{
-			{Type: "batch-task", Payload: []byte(`{}`)},
-			{Type: "batch-task", Payload: nil},
+			{Type: prodTaskTypeBatch, Payload: []byte(`{}`)},
+			{Type: prodTaskTypeBatch, Payload: nil},
 		}
 
 		_, err = p.EnqueueMany(t.Context(), tasks)
@@ -581,7 +586,7 @@ func TestEnqueueMany(t *testing.T) {
 
 		token := "batch-config-" + t.Name()
 		tasks := []*asynqpg.Task{
-			{Type: "batch-task", Payload: []byte(`{}`), Delay: 5 * time.Second, IdempotencyToken: ptr.Get(token)},
+			{Type: prodTaskTypeBatch, Payload: []byte(`{}`), Delay: 5 * time.Second, IdempotencyToken: ptr.Get(token)},
 		}
 
 		_, err = p.EnqueueMany(t.Context(), tasks)

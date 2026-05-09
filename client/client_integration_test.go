@@ -18,6 +18,8 @@ import (
 	"github.com/yakser/asynqpg/testutils"
 )
 
+const taskTypeRetryExhausted = "retry-exhausted-test"
+
 func setupClient(t *testing.T) (*client.Client, *repository.Repository) {
 	t.Helper()
 
@@ -367,7 +369,7 @@ func TestRetryTask_ExhaustedAttempts(t *testing.T) {
 
 	// Create a task with 1 attempt, run it, then fail it -> attempts_left becomes 0
 	tasks := []repository.PushTaskParams{
-		{Type: "retry-exhausted-test", Payload: []byte(`{}`), AttemptsLeft: 1, Delay: db.NewDuration(0)},
+		{Type: taskTypeRetryExhausted, Payload: []byte(`{}`), AttemptsLeft: 1, Delay: db.NewDuration(0)},
 	}
 	pushResults, err := repo.PushTasks(ctx, repository.PushTasksParams{Tasks: tasks})
 	require.NoError(t, err)
@@ -375,7 +377,7 @@ func TestRetryTask_ExhaustedAttempts(t *testing.T) {
 
 	// Fetch to set status to running
 	_, err = repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type: "retry-exhausted-test", Limit: 1, Delay: time.Minute,
+		Type: taskTypeRetryExhausted, Limit: 1, Delay: time.Minute,
 	})
 	require.NoError(t, err)
 
@@ -395,7 +397,7 @@ func TestRetryTask_ExhaustedAttempts(t *testing.T) {
 
 	// Now it's pending with attempts_left=0. Fetch and fail again.
 	_, err = repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type: "retry-exhausted-test", Limit: 1, Delay: time.Minute,
+		Type: taskTypeRetryExhausted, Limit: 1, Delay: time.Minute,
 	})
 	require.NoError(t, err)
 	err = repo.FailTasks(ctx, []int64{id}, "exhausted again")
