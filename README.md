@@ -35,7 +35,7 @@ Distributed task queue for Go, backed by PostgreSQL.
 - **Batch & transactional enqueue** – bulk insert with deduplication, enqueue within your DB transaction
 - **Per-type worker pools** – independent concurrency and timeout settings per task type
 - **Automatic maintenance** – leader election, stuck task rescue, old task cleanup
-- **Web dashboard** – Web UI with task inspection, filtering, retry/cancel/delete, and auth (Basic/OAuth)
+- **Web dashboard** – operator UI with overview KPIs, live task list, worker view, maintenance page, command palette (⌘K), keyboard navigation, light/dark themes, and Basic/OAuth auth
 - **OpenTelemetry** – built-in metrics and distributed tracing
 
 ## Installation
@@ -503,13 +503,35 @@ handler, err := ui.NewHandler(ui.HandlerOpts{
 http.Handle("/asynqpg/", handler)
 ```
 
-![Dashboard](docs/images/main-dash.png)
+The dashboard is a single-page React app embedded in the Go binary via `//go:embed`. It ships as four operator pages plus a profile/appearance page, with a command palette (⌘K), keyboard navigation (`j`/`k` to move, `x` to select), and light/dark themes that follow the system preference.
+
+### Overview
+
+Cluster snapshot at a glance: KPIs by status, per-task-type breakdown, current leader, and lease TTL. Auto-refreshes every 5 seconds.
+
+![Overview](docs/images/main-dash.png)
+
+### Tasks
+
+Live task list with saved views (All, Pending, Running, Failed, Needs retry, Dead-letter), filters by type / status / idempotency-token presence, full-text search by id / type / token, bulk retry and bulk delete, and pagination. Clicking a row opens an inline drawer with payload, attempt history, timing, and a `curl` snippet to reproduce the call.
 
 ![Tasks list](docs/images/tasks-list.png)
 
-![Task detail](docs/images/task-detail.png)
+![Task drawer](docs/images/task-detail.png)
 
-![Dead Letter Queue](docs/images/dlq.png)
+![Failed tasks](docs/images/dlq.png)
+
+### Workers
+
+Shows the currently elected leader (with lease remaining + auto-renew countdown) and a live snapshot of every task in `running` status across the cluster, including current attempt and elapsed time.
+
+![Workers](docs/images/workers.png)
+
+### Maintenance
+
+Status mix at a glance, the most recent failures, and a description of the leader-elected background jobs (Rescuer, Cleaner, Leader election) that run only on the elected leader.
+
+![Maintenance](docs/images/maintenance.png)
 
 ### Authentication
 
@@ -531,7 +553,7 @@ ui.HandlerOpts{
 }
 ```
 
-Implement the `ui.AuthProvider` interface to add any OAuth/SSO provider. See [`examples/demo/github_provider.go`](https://github.com/yakser/asynqpg/blob/master/examples/demo/github_provider.go) for a complete GitHub OAuth implementation.
+Implement the `ui.AuthProvider` interface to add any OAuth/SSO provider. Multiple providers can be configured in parallel — the login screen shows one button per provider. See [`examples/demo/github_provider.go`](https://github.com/yakser/asynqpg/blob/master/examples/demo/github_provider.go) for a complete GitHub OAuth implementation.
 
 ![GitHub OAuth login](docs/images/github-oauth.png)
 
