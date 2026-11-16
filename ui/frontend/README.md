@@ -1,10 +1,12 @@
-# React + TypeScript + Vite
+# Dashboard frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The dashboard uses React, TypeScript and Vite 8. Development requires Node.js 20.19+
+or 22.12+ (matching Vite's supported Node versions). Run `npm ci`, `npm run lint`,
+and `npm run build`; the built `dist/` assets are embedded by the Go UI module.
 
 Currently, two official plugins are available:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) 6 uses Vite 8's Oxc transform for Fast Refresh
 - [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
 ## React Compiler

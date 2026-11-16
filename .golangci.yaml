@@ -81,6 +81,7 @@ linters:
       - third_party$
       - builtin$
       - examples/
+      - (^|/)node_modules/
 issues:
   max-issues-per-linter: 20
   max-same-issues: 5
@@ -92,6 +93,7 @@ formatters:
       - third_party$
       - builtin$
       - examples/
+      - (^|/)node_modules/
   enable:
     - goimports
     - gofmt

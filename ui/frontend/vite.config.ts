@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
   server: {
@@ -16,13 +16,17 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    rollupOptions: {
+    // Preserve the browser baseline used before the Vite 8 upgrade.
+    target: ["chrome107", "edge107", "firefox104", "safari16"],
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          "vendor-react": ["react", "react-dom"],
-          "vendor-router": ["react-router"],
-          "vendor-query": ["@tanstack/react-query"],
-          "vendor-icons": ["lucide-react"],
+        codeSplitting: {
+          groups: [
+            { name: "vendor-react", test: /node_modules\/(react|react-dom|scheduler)\// },
+            { name: "vendor-router", test: /node_modules\/react-router\// },
+            { name: "vendor-query", test: /node_modules\/@tanstack\// },
+            { name: "vendor-icons", test: /node_modules\/lucide-react\// },
+          ],
         },
       },
     },
