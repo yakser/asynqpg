@@ -68,7 +68,7 @@ func createFailedTask(t *testing.T, repo *repository.Repository, taskType string
 
 	ctx := context.Background()
 	id := createRunningTask(t, repo, taskType)
-	err := repo.FailTasks(ctx, []int64{id}, "test failure")
+	err := repo.FailTasks(ctx, []int64{id}, firstGenerations([]int64{id}), "test failure")
 	require.NoError(t, err)
 	return id
 }
@@ -78,7 +78,7 @@ func createCompletedTask(t *testing.T, repo *repository.Repository, taskType str
 
 	ctx := context.Background()
 	id := createRunningTask(t, repo, taskType)
-	err := repo.CompleteTasks(ctx, []int64{id})
+	err := repo.CompleteTasks(ctx, []int64{id}, firstGenerations([]int64{id}))
 	require.NoError(t, err)
 	return id
 }
@@ -367,7 +367,9 @@ func TestRetryTask_ExhaustedAttempts(t *testing.T) {
 	c, repo := setupClient(t)
 	ctx := context.Background()
 
-	// Create a task with 1 attempt, run it, then fail it -> attempts_left becomes 0
+	// Push a task with 1 attempt, fetch it (running), then fail it.
+	// FailTasks marks the task as failed AND sets attempts_left=0, which is the
+	// dead-letter terminal state we want to exercise here.
 	tasks := []repository.PushTaskParams{
 		{Type: taskTypeRetryExhausted, Payload: []byte(`{}`), AttemptsLeft: 1, Delay: db.NewDuration(0)},
 	}
@@ -375,35 +377,16 @@ func TestRetryTask_ExhaustedAttempts(t *testing.T) {
 	require.NoError(t, err)
 	id := pushResults[0].ID
 
-	// Fetch to set status to running
 	_, err = repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
 		Type: taskTypeRetryExhausted, Limit: 1, Delay: time.Minute,
 	})
 	require.NoError(t, err)
 
-	// Fail the task (sets attempts_left via normal flow – but FailTasks doesn't decrement)
-	// We need to simulate exhaustion: set attempts_left = 0 via RetryTask then fail
-	// Actually FailTasks doesn't change attempts_left. The task has attempts_left=1, status=running.
-	// Let's fail it directly.
-	err = repo.FailTasks(ctx, []int64{id}, "exhausted")
+	err = repo.FailTasks(ctx, []int64{id}, firstGenerations([]int64{id}), "exhausted")
 	require.NoError(t, err)
 
-	// Now the task is failed with attempts_left=1. Let's verify retry sets to pending.
-	// For true exhaustion test, we need attempts_left=0. Use RetryTask from repo to decrement, then fail again.
-	err = repo.RetryTask(ctx, repository.RetryTaskParams{
-		ID: id, BlockedTill: time.Now(), Message: "retry",
-	})
-	require.NoError(t, err)
-
-	// Now it's pending with attempts_left=0. Fetch and fail again.
-	_, err = repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-		Type: taskTypeRetryExhausted, Limit: 1, Delay: time.Minute,
-	})
-	require.NoError(t, err)
-	err = repo.FailTasks(ctx, []int64{id}, "exhausted again")
-	require.NoError(t, err)
-
-	// Now task is failed with attempts_left=0
+	// Task is now failed with attempts_left=0 — operator-driven retry must
+	// bump attempts_left back to 1 so the task can run again.
 	got, err := c.RetryTask(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, asynqpg.TaskStatusPending, got.Status)

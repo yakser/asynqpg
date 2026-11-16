@@ -75,7 +75,7 @@ func TestBatchCompleter_Complete_Single(t *testing.T) {
 
 	require.NoError(t, bc.Start(ctx))
 
-	require.NoError(t, bc.Complete(ids[0]))
+	require.NoError(t, bc.Complete(ids[0], 1))
 
 	bc.Stop()
 
@@ -96,7 +96,7 @@ func TestBatchCompleter_Complete_Multiple(t *testing.T) {
 	require.NoError(t, bc.Start(ctx))
 
 	for _, id := range ids {
-		require.NoError(t, bc.Complete(id))
+		require.NoError(t, bc.Complete(id, 1))
 	}
 
 	bc.Stop()
@@ -131,7 +131,7 @@ func TestBatchCompleter_Complete_FlushOnThreshold(t *testing.T) {
 	defer bc.Stop()
 
 	for _, id := range ids {
-		require.NoError(t, bc.Complete(id))
+		require.NoError(t, bc.Complete(id, 1))
 	}
 
 	// Threshold reached -- flush should happen without waiting for the 10s interval
@@ -169,7 +169,7 @@ func TestBatchCompleter_Complete_FlushOnInterval(t *testing.T) {
 	defer bc.Stop()
 
 	for _, id := range ids {
-		require.NoError(t, bc.Complete(id))
+		require.NoError(t, bc.Complete(id, 1))
 	}
 
 	// Interval flush should complete tasks within a few ticks
@@ -196,7 +196,7 @@ func TestBatchCompleter_Fail_Basic(t *testing.T) {
 	require.NoError(t, bc.Start(ctx))
 
 	for i, id := range ids {
-		require.NoError(t, bc.Fail(id, "error message "+string(rune('A'+i))))
+		require.NoError(t, bc.Fail(id, 1, "error message "+string(rune('A'+i))))
 	}
 
 	bc.Stop()
@@ -223,7 +223,7 @@ func TestBatchCompleter_Retry_Basic(t *testing.T) {
 	blockedTills := make([]time.Time, len(ids))
 	for i, id := range ids {
 		blockedTills[i] = time.Now().Add(time.Duration(i+1) * time.Second)
-		require.NoError(t, bc.Retry(id, blockedTills[i], "retry reason"))
+		require.NoError(t, bc.Retry(id, 1, blockedTills[i], "retry reason"))
 	}
 
 	bc.Stop()
@@ -251,17 +251,17 @@ func TestBatchCompleter_MixedOperations(t *testing.T) {
 	require.NoError(t, bc.Start(ctx))
 
 	// Complete first 2
-	require.NoError(t, bc.Complete(ids[0]))
-	require.NoError(t, bc.Complete(ids[1]))
+	require.NoError(t, bc.Complete(ids[0], 1))
+	require.NoError(t, bc.Complete(ids[1], 1))
 
 	// Fail next 2
-	require.NoError(t, bc.Fail(ids[2], "error 1"))
-	require.NoError(t, bc.Fail(ids[3], "error 2"))
+	require.NoError(t, bc.Fail(ids[2], 1, "error 1"))
+	require.NoError(t, bc.Fail(ids[3], 1, "error 2"))
 
 	// Retry last 2
 	retryTime := time.Now().Add(time.Second)
-	require.NoError(t, bc.Retry(ids[4], retryTime, "retry 1"))
-	require.NoError(t, bc.Retry(ids[5], retryTime, "retry 2"))
+	require.NoError(t, bc.Retry(ids[4], 1, retryTime, "retry 1"))
+	require.NoError(t, bc.Retry(ids[5], 1, retryTime, "retry 2"))
 
 	bc.Stop()
 
@@ -300,7 +300,7 @@ func TestBatchCompleter_GracefulShutdown(t *testing.T) {
 	require.NoError(t, bc.Start(ctx))
 
 	for _, id := range ids {
-		require.NoError(t, bc.Complete(id))
+		require.NoError(t, bc.Complete(id, 1))
 	}
 
 	// Stop immediately -- should flush pending operations before returning
@@ -357,7 +357,7 @@ func TestBatchCompleter_Backpressure_Block(t *testing.T) {
 			if i >= 5 {
 				blocked.Store(true)
 			}
-			_ = bc.Complete(id)
+			_ = bc.Complete(id, 1)
 		}
 	})
 
@@ -398,18 +398,17 @@ func TestBatchCompleter_SameTaskMultipleOperations(t *testing.T) {
 
 	require.NoError(t, bc.Start(ctx))
 
-	// Same task ID, different operations -- each type uses a separate map.
-	// All three UPDATEs require status='running', so only the first to execute
-	// will match; the others will affect 0 rows.
-	require.NoError(t, bc.Retry(ids[0], time.Now().Add(time.Second), "retry"))
-	require.NoError(t, bc.Fail(ids[0], "fail"))
-	require.NoError(t, bc.Complete(ids[0]))
+	// Same task ID across operations collapses to the last write within a single
+	// flush -- only the most recent operation reaches the database.
+	require.NoError(t, bc.Retry(ids[0], 1, time.Now().Add(time.Second), "retry"))
+	require.NoError(t, bc.Fail(ids[0], 1, "fail"))
+	require.NoError(t, bc.Complete(ids[0], 1))
 
 	bc.Stop()
 
 	task, err := clientRepo.GetTaskByID(ctx, ids[0])
 	require.NoError(t, err)
-	assert.NotEqual(t, "running", task.Status, "task should have been transitioned from running")
+	assert.Equal(t, "completed", task.Status)
 }
 
 func TestBatchCompleter_ConcurrentOperations(t *testing.T) {
@@ -425,7 +424,7 @@ func TestBatchCompleter_ConcurrentOperations(t *testing.T) {
 	var wg sync.WaitGroup
 	for _, id := range ids {
 		wg.Go(func() {
-			_ = bc.Complete(id)
+			_ = bc.Complete(id, 1)
 		})
 	}
 

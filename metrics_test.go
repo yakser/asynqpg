@@ -109,3 +109,34 @@ func TestMetrics_CounterValues(t *testing.T) {
 	}
 	t.Fatal("asynqpg.tasks.enqueued metric not found")
 }
+
+func TestMetrics_Notifications(t *testing.T) {
+	t.Parallel()
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+	m, err := NewMetrics(mp)
+	require.NoError(t, err)
+	ctx := context.Background()
+	m.NotificationConnections.Add(ctx, 1)
+	m.NotificationsReceived.Add(ctx, 3)
+	m.NotificationsIgnored.Add(ctx, 1)
+	m.NotificationReconnects.Add(ctx, 1)
+	m.ConsumerFetches.Add(ctx, 2)
+	m.ConsumerEmptyFetches.Add(ctx, 1)
+	m.NotificationConnections.Add(ctx, -1)
+	var got metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(ctx, &got))
+	want := map[string]int64{"asynqpg.notifications.connected": 0, "asynqpg.notifications.received": 3, "asynqpg.notifications.ignored": 1, "asynqpg.notifications.reconnects": 1, "asynqpg.consumer.fetches": 2, "asynqpg.consumer.empty_fetches": 1}
+	for _, scope := range got.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			if value, ok := want[m.Name]; ok {
+				sum := m.Data.(metricdata.Sum[int64])
+				require.Len(t, sum.DataPoints, 1)
+				assert.Equal(t, value, sum.DataPoints[0].Value)
+				delete(want, m.Name)
+			}
+		}
+	}
+	assert.Empty(t, want)
+}

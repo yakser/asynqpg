@@ -90,3 +90,51 @@ export interface LeaderInfo {
   expires_at: string | null
   lease_ttl_seconds: number
 }
+
+export interface ConsumerTaskType {
+  type: string
+  workers: number
+  busy: number
+  max_attempts: number
+  timeout_ms: number
+}
+
+export interface ConsumerInfo {
+  running: boolean
+  id: string
+  is_leader: boolean
+  maintenance_enabled: boolean
+  started_at: string | null
+  fetch_interval_ms: number
+  janitor_interval_ms: number
+  stuck_threshold_ms: number
+  shutdown_timeout_ms: number
+  task_types: ConsumerTaskType[]
+}
+
+export interface MaintenanceInfo {
+  config: {
+    source: "configured" | "defaults"
+    stuck_threshold_ms: number
+    completed_retention_ms: number
+    failed_retention_ms: number
+    cancelled_retention_ms: number
+    interval_ms: number
+  }
+  rescuable: {
+    total: number
+    retriable: number
+    discardable: number
+  }
+  cleanable: {
+    total: number
+    completed: number
+    failed: number
+    cancelled: number
+  }
+  queue_health: {
+    oldest_pending_ms: number | null
+    completed_last_15m: number
+    failed_last_15m: number
+  }
+}

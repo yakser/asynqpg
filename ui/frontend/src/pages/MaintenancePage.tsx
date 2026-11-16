@@ -1,34 +1,46 @@
-import { useMemo } from "react"
+import type { ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router"
-import { getLeader, getStats, getTasks } from "@/api/client"
+import { getLeader, getMaintenance, getStats, getTasks } from "@/api/client"
 import { Icon } from "@/components/Icon"
+import { QueryNotice } from "@/components/QueryNotice"
 import { Kpi } from "@/components/Kpi"
 import { StatusChip } from "@/components/StatusChip"
-import { ago, fmtMs, fmtN, fmtTime } from "@/lib/format"
+import { ago, fmtDur, fmtMs, fmtN, fmtTime } from "@/lib/format"
 import type { TaskSummary } from "@/api/types"
 
 export function MaintenancePage() {
   const navigate = useNavigate()
 
-  const { data: leader } = useQuery({
+  const leaderQuery = useQuery({
     queryKey: ["leader"],
     queryFn: getLeader,
     refetchInterval: 5000,
   })
 
-  const { data: stats } = useQuery({
+  const statsQuery = useQuery({
     queryKey: ["stats"],
     queryFn: getStats,
     refetchInterval: 5000,
   })
 
-  const { data: failed } = useQuery({
+  const failedQuery = useQuery({
     queryKey: ["tasks", { status: "failed", order: "DESC", limit: 10 }],
     queryFn: () =>
       getTasks({ status: "failed", order_by: "id", order: "DESC", limit: 10 }),
     refetchInterval: 5000,
   })
+
+  const maintenanceQuery = useQuery({
+    queryKey: ["maintenance"],
+    queryFn: getMaintenance,
+    refetchInterval: 30_000,
+  })
+
+  const { data: leader } = leaderQuery
+  const { data: stats } = statsQuery
+  const { data: failed } = failedQuery
+  const { data: maintenance } = maintenanceQuery
 
   const electedAt = leader?.elected_at ? new Date(leader.elected_at) : null
   const failedTasks = failed?.tasks ?? []
@@ -42,10 +54,12 @@ export function MaintenancePage() {
 
   // A "dead-letter" task is failed with no retries left — operator action
   // required (retry manually or delete).
-  const deadLetter = useMemo(
-    () => failedTasks.filter((t) => t.attempts_left === 0).length,
-    [failedTasks],
-  )
+  const deadLetter = failedTasks.filter((t) => t.attempts_left === 0).length
+
+  const cfg = maintenance?.config
+  const rescuable = maintenance?.rescuable
+  const cleanable = maintenance?.cleanable
+  const health = maintenance?.queue_health
 
   return (
     <div>
@@ -53,12 +67,13 @@ export function MaintenancePage() {
         <div>
           <h1>Maintenance</h1>
           <div className="sub">
-            leader-elected background tasks · table <code>asynqpg_leader</code>
+            leader-elected background tasks · preview refreshes every 30s
           </div>
         </div>
       </div>
 
-      <div className="section-block">
+      <QueryNotice label="leader" {...leaderQuery} hasData={leader !== undefined} onRetry={() => { void leaderQuery.refetch() }} />
+      {leader && <div className="section-block">
         <div className="leader-card">
           <span className="crown">
             <Icon name="crown" size={18} />
@@ -100,7 +115,9 @@ export function MaintenancePage() {
         </div>
       </div>
 
-      <div className="kpi-strip kpi-strip-4">
+      }
+      <QueryNotice label="queue stats" {...statsQuery} hasData={stats !== undefined} onRetry={() => { void statsQuery.refetch() }} />
+      {stats && <div className="kpi-strip kpi-strip-4">
         <Kpi
           label="pending"
           value={fmtN(totals.pending)}
@@ -118,22 +135,49 @@ export function MaintenancePage() {
           color="var(--status-failed)"
         />
         <Kpi
-          label="dead-letter"
-          value={fmtN(deadLetter)}
+          label="dead-letter · recent"
+          value={failed ? fmtN(deadLetter) : "—"}
+          sub={failedQuery.isError && failed ? "stale recent failures" : "among the latest 10 failures"}
           color="var(--status-failed)"
         />
       </div>
 
+      }
+      <QueryNotice label="maintenance preview" {...maintenanceQuery} hasData={maintenance !== undefined} onRetry={() => { void maintenanceQuery.refetch() }} />
+      {maintenance && <div className="kpi-strip kpi-strip-3">
+        <Kpi
+          label="oldest pending"
+          value={fmtDur(health?.oldest_pending_ms)}
+          color="var(--status-pending)"
+          sub="time the queue's oldest waiting task has been pending"
+        />
+        <Kpi
+          label="completed · 15m"
+          value={fmtN(health?.completed_last_15m)}
+          color="var(--status-completed)"
+          live
+          sub="retained rows finalized in the last 15 minutes"
+        />
+        <Kpi
+          label="failed · 15m"
+          value={fmtN(health?.failed_last_15m)}
+          color="var(--status-failed)"
+          sub="retained rows finalized in the last 15 minutes"
+        />
+      </div>
+
+      }
       <div className="section-block">
         <div className="h2">
           <h2>Recent failures</h2>
           <span className="sub">
-            top {fmtN(failedTasks.length)} of {fmtN(totals.failed)} · ordered by
-            id desc
+            {failed ? `${fmtN(failedTasks.length)} recent failures` : ""}
+            {stats ? ` of ${fmtN(totals.failed)}${statsQuery.isError ? " (stale total)" : ""}` : ""}
           </span>
         </div>
 
-        {failedTasks.length === 0 ? (
+        <QueryNotice label="recent failures" {...failedQuery} hasData={failed !== undefined} onRetry={() => { void failedQuery.refetch() }} />
+        {failed !== undefined && (failedTasks.length === 0 ? (
           <div className="empty">
             <div className="h">No failures recorded.</div>
             <div>
@@ -171,30 +215,83 @@ export function MaintenancePage() {
               </tbody>
             </table>
           </div>
-        )}
+        ))}
       </div>
 
       <div className="section-block">
         <div className="h2">
           <h2>Background tasks</h2>
-          <span className="sub">runs only on the elected leader</span>
+          <span className="sub">
+            runs only on the elected leader · current eligibility estimate
+          </span>
         </div>
+        <QueryNotice label="maintenance preview" {...maintenanceQuery} hasData={maintenance !== undefined} onRetry={() => { void maintenanceQuery.refetch() }} />
+        {cfg && <p className="preview-settings">
+          Preview settings: {cfg.source === "configured" ? "application configuration" : "library defaults"} (defaults apply to omitted fields).
+          {" "}These settings must match the leader's configuration.
+        </p>}
         <div className="maint-tasks">
+          {maintenance && <>
           <MaintTask
             icon="rotate-ccw"
             name="Rescuer"
-            desc="Returns tasks whose lease expired (consumer crashed mid-run) from running back to pending so they can be retried."
+            desc="Retries tasks running past the stuck threshold, or marks them failed when no attempts remain."
+            meta={
+              <>
+                <div>
+                  stuck after {fmtDur(cfg?.stuck_threshold_ms)} · runs every{" "}
+                  {fmtDur(cfg?.interval_ms)}
+                </div>
+                {rescuable && rescuable.total > 0 && (
+                  <div>
+                    → would retry {fmtN(rescuable.retriable)}, discard{" "}
+                    {fmtN(rescuable.discardable)}
+                  </div>
+                )}
+              </>
+            }
+            badge={rescuable ? `${fmtN(rescuable.total)} stuck` : undefined}
+            badgeActive={!!rescuable && rescuable.total > 0}
           />
           <MaintTask
             icon="trash-2"
             name="Cleaner"
-            desc="Deletes old completed and cancelled tasks past the configured retention window to keep the table small."
+            desc="Deletes finalized tasks past their retention window to keep the table small."
+            meta={
+              <>
+                <div>
+                  keeps completed {fmtDur(cfg?.completed_retention_ms)} · failed{" "}
+                  {fmtDur(cfg?.failed_retention_ms)} · cancelled{" "}
+                  {fmtDur(cfg?.cancelled_retention_ms)}
+                </div>
+                {cleanable && cleanable.total > 0 && (
+                  <div>
+                    → {fmtN(cleanable.completed)} completed,{" "}
+                    {fmtN(cleanable.failed)} failed, {fmtN(cleanable.cancelled)}{" "}
+                    cancelled past retention
+                  </div>
+                )}
+              </>
+            }
+            badge={cleanable ? `${fmtN(cleanable.total)} to delete` : undefined}
+            badgeActive={!!cleanable && cleanable.total > 0}
           />
-          <MaintTask
+          </>}
+          {leader && <MaintTask
             icon="crown"
             name="Leader election"
             desc="A single consumer holds asynqpg_leader at a time, refreshing the lease before TTL. On crash, another consumer takes over within one TTL."
-          />
+            meta={
+              leader && leader.leader_id ? (
+                <div>
+                  lease ttl {leader.lease_ttl_seconds}s
+                  {electedAt ? ` · elected ${ago(electedAt)} ago` : ""}
+                </div>
+              ) : (
+                <div>no leader elected yet</div>
+              )
+            }
+          />}
         </div>
       </div>
     </div>
@@ -262,20 +359,32 @@ function MaintTask({
   icon,
   name,
   desc,
+  meta,
+  badge,
+  badgeActive,
 }: {
   icon: string
   name: string
   desc: string
+  meta?: ReactNode
+  badge?: ReactNode
+  badgeActive?: boolean
 }) {
   return (
     <div className="maint-task">
       <span className="maint-task-icon">
         <Icon name={icon} size={16} />
       </span>
-      <div>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div className="maint-task-name">{name}</div>
         <div className="maint-task-desc">{desc}</div>
+        {meta && <div className="maint-task-meta">{meta}</div>}
       </div>
+      {badge != null && (
+        <span className={`maint-task-badge${badgeActive ? " active" : ""}`}>
+          {badge}
+        </span>
+      )}
     </div>
   )
 }

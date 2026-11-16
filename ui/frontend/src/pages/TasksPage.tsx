@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "react-router"
 import {
@@ -113,7 +113,9 @@ export function TasksPage() {
   const tasksQuery = useQuery({
     queryKey: ["tasks", params],
     queryFn: () => getTasks(params),
-    refetchInterval: 5000,
+    // Pause polling while a task is active so the list order/contents stay
+    // frozen during keyboard navigation; resume once the selection is cleared.
+    refetchInterval: activeId == null ? 5000 : false,
   })
 
   const tasks = useMemo(() => {
@@ -148,6 +150,24 @@ export function TasksPage() {
       return next
     })
   }
+
+  // Refresh the list immediately when the selection is cleared, since polling
+  // was paused while a task was active.
+  const refetchTasks = tasksQuery.refetch
+  const prevActiveRef = useRef(activeId)
+  useEffect(() => {
+    if (prevActiveRef.current != null && activeId == null) {
+      refetchTasks()
+    }
+    prevActiveRef.current = activeId
+  }, [activeId, refetchTasks])
+
+  // Keep the active row in view while navigating with the keyboard.
+  useEffect(() => {
+    if (activeId == null) return
+    const el = document.querySelector(`tr[data-task-id="${activeId}"]`)
+    el?.scrollIntoView({ block: "nearest" })
+  }, [activeId])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -218,14 +238,6 @@ export function TasksPage() {
   }
 
   const total = tasksQuery.data?.total ?? 0
-  const totalForView: Record<ViewId, number | undefined> = {
-    all: total,
-    pending: undefined,
-    running: undefined,
-    failed: undefined,
-    "needs-retry": undefined,
-    deadletter: undefined,
-  }
 
   return (
     <div>
@@ -234,6 +246,9 @@ export function TasksPage() {
           <h1>Tasks</h1>
           <div className="sub">
             {fmtN(tasks.length)} of {fmtN(total)} in current page
+            {activeId != null && (
+              <span style={{ color: "var(--fg-3)" }}> · live paused · Esc to resume</span>
+            )}
           </div>
         </div>
         <div className="actions">
@@ -248,11 +263,7 @@ export function TasksPage() {
         </div>
       </div>
 
-      <SavedViews
-        views={VIEWS.map((v) => ({ ...v, count: totalForView[v.id] }))}
-        active={view}
-        onChange={setView}
-      />
+      <SavedViews views={VIEWS} active={view} onChange={setView} />
 
       <div className="filter-bar">
         <label className="search-bar tasks-search">
@@ -263,6 +274,7 @@ export function TasksPage() {
             onChange={(e) => setText(e.target.value)}
             placeholder="id · type · idempotency token…"
             aria-label="Search tasks by id, type, or idempotency token"
+            inputMode="search"
           />
         </label>
 
@@ -282,7 +294,10 @@ export function TasksPage() {
         />
 
         <span className="spacer" style={{ flex: 1 }} />
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--fg-3)" }}>
+        <span
+          className="desktop-only"
+          style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--fg-3)" }}
+        >
           <kbd>j</kbd> <kbd>k</kbd> to move · <kbd>x</kbd> select · <kbd>⌘K</kbd> command
         </span>
       </div>
@@ -396,6 +411,7 @@ function Row({ t, active, selected, onSelect, onOpen }: RowProps) {
 
   return (
     <tr
+      data-task-id={t.id}
       className={(active ? "active " : "") + (selected ? "selected" : "")}
       onClick={onOpen}
       onKeyDown={(e) => {

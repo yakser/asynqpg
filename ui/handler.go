@@ -99,6 +99,8 @@ func (h *handler) registerRoutes(mux *http.ServeMux) {
 	protected.HandleFunc("POST /api/tasks/bulk/retry", h.handleBulkRetry)
 	protected.HandleFunc("POST /api/tasks/bulk/delete", h.handleBulkDelete)
 	protected.HandleFunc("GET /api/cluster/leader", h.handleClusterLeader)
+	protected.HandleFunc("GET /api/cluster/consumers", h.handleClusterConsumers)
+	protected.HandleFunc("GET /api/cluster/maintenance", h.handleClusterMaintenance)
 
 	if h.oauthEnabled() {
 		protected.HandleFunc("GET /api/auth/me", h.handleAuthMe)

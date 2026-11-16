@@ -41,6 +41,13 @@ export function TaskDrawer({
     return () => window.removeEventListener("keydown", onKey)
   }, [onClose])
 
+  // Lock the underlying page scroll while the drawer is open so wheel/touch
+  // events over the scrim or drawer don't drift the task list behind it.
+  useEffect(() => {
+    document.body.classList.add("drawer-open")
+    return () => document.body.classList.remove("drawer-open")
+  }, [])
+
   const queryClient = useQueryClient()
   const invalidateTasks = () => {
     queryClient.invalidateQueries({ queryKey: ["tasks"] })

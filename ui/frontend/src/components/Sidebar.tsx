@@ -211,6 +211,7 @@ export function Sidebar({ open = false, onNavigate, collapsed = false }: Sidebar
             placeholder="Filter queues…"
             spellCheck={false}
             aria-label="Filter queues"
+            inputMode="search"
           />
           {filter && (
             <button type="button" onClick={() => setFilter("")} aria-label="Clear filter">

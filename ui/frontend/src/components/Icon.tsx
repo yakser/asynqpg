@@ -76,14 +76,23 @@ const ICONS: Record<string, LucideIcon> = {
 export interface IconProps {
   name: string
   size?: number
+  strokeWidth?: number
   className?: string
   style?: React.CSSProperties
 }
 
-export function Icon({ name, size = 14, className, style }: IconProps) {
+export function Icon({ name, size = 14, strokeWidth, className, style }: IconProps) {
   const Comp = ICONS[name]
   if (!Comp) {
     return <span className={className} style={style} aria-hidden />
   }
-  return <Comp size={size} className={className ? "ic " + className : "ic"} style={style} aria-hidden />
+  return (
+    <Comp
+      size={size}
+      strokeWidth={strokeWidth}
+      className={className ? "ic " + className : "ic"}
+      style={style}
+      aria-hidden
+    />
+  )
 }

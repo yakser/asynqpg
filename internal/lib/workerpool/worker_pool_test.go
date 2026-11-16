@@ -259,3 +259,88 @@ func TestWorkerPool_SubmitNilTask(t *testing.T) {
 		t.Fatal("timeout: pool not functional after nil task")
 	}
 }
+
+func TestWorkerPool_CapacityAfterRelease(t *testing.T) {
+	t.Parallel()
+	pool := NewWorkerPool(1)
+	t.Cleanup(pool.Close)
+	<-pool.CapacityAvailable() // Initial resize signal.
+	release := make(chan struct{})
+	require.NoError(t, pool.Submit(func() { <-release }))
+	require.Zero(t, pool.FreeWorkers())
+	close(release)
+	select {
+	case <-pool.CapacityAvailable():
+	case <-time.After(time.Second):
+		t.Fatal("missing capacity signal")
+	}
+	require.Equal(t, 1, pool.FreeWorkers())
+}
+func TestWorkerPool_CapacityCoalesces(t *testing.T) {
+	t.Parallel()
+	pool := NewWorkerPool(2)
+	t.Cleanup(pool.Close)
+	var done sync.WaitGroup
+	for range 100 {
+		done.Add(1)
+		require.NoError(t, pool.Submit(func() { done.Done() }))
+	}
+	done.Wait()
+	pool.Close()
+	require.LessOrEqual(t, len(pool.CapacityAvailable()), 1)
+	require.Equal(t, 2, pool.FreeWorkers())
+}
+func TestWorkerPool_SubmitReservesCapacity(t *testing.T) {
+	t.Parallel()
+	pool := NewWorkerPool(1)
+	release := make(chan struct{})
+	require.NoError(t, pool.Submit(func() { <-release }))
+	require.Zero(t, pool.FreeWorkers())
+	close(release)
+	pool.Close()
+	require.Equal(t, 1, pool.FreeWorkers())
+}
+func TestWorkerPool_ResizeSignalsCapacity(t *testing.T) {
+	t.Parallel()
+	pool := NewWorkerPool(0)
+	t.Cleanup(pool.Close)
+	pool.Resize(2)
+	select {
+	case <-pool.CapacityAvailable():
+	case <-time.After(time.Second):
+		t.Fatal("missing resize signal")
+	}
+	require.Equal(t, 2, pool.FreeWorkers())
+}
+func TestWorkerPool_NilTaskAccounting(t *testing.T) {
+	t.Parallel()
+	pool := NewWorkerPool(1)
+	t.Cleanup(pool.Close)
+	require.NoError(t, pool.Submit(nil))
+	pool.Close()
+	require.Equal(t, 1, pool.FreeWorkers())
+	require.Error(t, pool.Submit(nil))
+}
+func TestWorkerPool_CloseAfterSubmission(t *testing.T) {
+	t.Parallel()
+	pool := NewWorkerPool(1)
+	entered, release := make(chan struct{}), make(chan struct{})
+	require.NoError(t, pool.Submit(func() { close(entered); <-release }))
+	<-entered
+	blocked := make(chan error, 1)
+	go func() { blocked <- pool.Submit(func() {}) }()
+	stopped := make(chan struct{})
+	go func() { pool.Close(); close(stopped) }()
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("close blocked")
+	}
+	select {
+	case <-blocked:
+	case <-time.After(time.Second):
+		t.Fatal("submit leaked")
+	}
+	require.Equal(t, 1, pool.FreeWorkers())
+}

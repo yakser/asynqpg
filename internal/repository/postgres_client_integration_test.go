@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yakser/asynqpg"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -44,7 +46,7 @@ func makeRunning(t *testing.T, repo *repository.Repository, taskType string, id 
 func makeFailed(t *testing.T, repo *repository.Repository, taskType string, id int64) {
 	t.Helper()
 	makeRunning(t, repo, taskType, id)
-	err := repo.FailTasks(context.Background(), []int64{id}, "test failure")
+	err := repo.FailTasks(context.Background(), []int64{id}, firstGenerations([]int64{id}), "test failure")
 	require.NoError(t, err)
 }
 
@@ -52,7 +54,7 @@ func makeFailed(t *testing.T, repo *repository.Repository, taskType string, id i
 func makeCompleted(t *testing.T, repo *repository.Repository, taskType string, id int64) {
 	t.Helper()
 	makeRunning(t, repo, taskType, id)
-	err := repo.CompleteTasks(context.Background(), []int64{id})
+	err := repo.CompleteTasks(context.Background(), []int64{id}, firstGenerations([]int64{id}))
 	require.NoError(t, err)
 }
 
@@ -112,7 +114,7 @@ func TestListTasks_FilterByStatus(t *testing.T) {
 	makeFailed(t, repo, "list-filter-status-1", id1)
 
 	got, err := clientRepo.ListTasks(context.Background(), repository.ListTasksParams{
-		Statuses: []string{"failed"},
+		Statuses: []string{asynqpg.StatusFailed},
 		Limit:    10,
 		Offset:   0,
 	})
@@ -121,7 +123,7 @@ func TestListTasks_FilterByStatus(t *testing.T) {
 	assert.Equal(t, 1, got.Total)
 	require.Len(t, got.Tasks, 1)
 	assert.Equal(t, id1, got.Tasks[0].ID)
-	assert.Equal(t, "failed", got.Tasks[0].Status)
+	assert.Equal(t, asynqpg.StatusFailed, got.Tasks[0].Status)
 }
 
 func TestListTasks_Pagination(t *testing.T) {
@@ -332,7 +334,7 @@ func TestSnoozeTasksMany_Basic(t *testing.T) {
 
 	futureTime := time.Now().Add(time.Hour)
 	count, err := repo.SnoozeTasksMany(context.Background(), repository.SnoozeTasksManyParams{
-		IDs:          []int64{id1, id2},
+		Generations: firstGenerations([]int64{id1, id2}), IDs: []int64{id1, id2},
 		BlockedTills: []time.Time{futureTime, futureTime},
 	})
 

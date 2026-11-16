@@ -7,7 +7,7 @@ Distributed task queue for Go, backed by PostgreSQL.
 [![Go Reference](https://pkg.go.dev/badge/github.com/yakser/asynqpg.svg)](https://pkg.go.dev/github.com/yakser/asynqpg)
 [![Website](https://img.shields.io/badge/website-asynqpg--landing-blue)](https://yakser.github.io/asynqpg-landing)
 
-Consumers pull tasks concurrently without contention – Postgres hands each worker its own batch and skips rows already claimed by others, so throughput scales with workers. Producers can enqueue inside the same transaction as your business logic, so a job appears if and only if your write commits.
+Consumers claim batches using PostgreSQL row locks and skip locked rows to reduce contention. Producers can enqueue inside the same transaction as your business logic, so jobs become visible when that transaction commits. Processing is at-least-once: handlers must tolerate repeated execution after failures or lease expiry.
 
 ## Contents
 
@@ -32,7 +32,8 @@ Consumers pull tasks concurrently without contention – Postgres hands each wor
 ## Features
 
 - **Postgres-native** – tasks stored in a single table; no Redis or external broker required
-- **Safe concurrent processing** – Postgres hands each worker its own batch and skips rows already claimed by others, so multiple consumers never touch the same task
+- **Safe concurrent claims** – row locks coordinate claims; generation checks prevent stale results from overwriting a newer attempt
+- **Optional readiness notifications** – LISTEN/NOTIFY wakes consumers promptly, with polling as a fallback
 - **Transactional enqueue** – pass `*sqlx.Tx` to `EnqueueTx` so jobs commit atomically with your business logic
 - **Flexible retries** – exponential or constant backoff, snooze without consuming attempts, skip-retry for permanent errors
 - **Delayed & scheduled tasks** – `WithDelay` or direct `ProcessAt` for future processing
@@ -60,6 +61,16 @@ make migrate    # apply migrations
 ```
 
 Or use `testcontainers-go` in tests – no manual setup needed.
+
+Existing databases must apply `migrations/002_claim_generation.sql` and
+`migrations/003_remove_readiness_triggers.sql` before starting upgraded workers.
+The latter removes legacy notification triggers; publication now happens in library
+operations. Stop all old consumers and maintenance processes first: older ID-only outcome
+writes cannot be fenced during a mixed-version rollout. Existing rows start at
+generation zero; every successful claim atomically increments the generation.
+Worker outcomes require the matching generation and running status. Cancellation
+and manual retry remain explicit administrative operations. This prevents stale
+outcomes from changing newer attempts, but handlers still need idempotent side effects.
 
 ## Quick Start
 
@@ -104,6 +115,16 @@ func main() {
 ```
 
 ### Consumer
+
+Consumers can optionally use PostgreSQL `LISTEN/NOTIFY` for prompt task pickup while
+retaining periodic polling. Set `consumer.Config.Notifications`; no optional migration
+is required. Both modes share a capacity-aware fetcher and `Config.FetchCooldown`.
+Library mutations publish atomically by default; direct external SQL relies on polling.
+Remove legacy optional triggers when upgrading (see the guide below).
+See [readiness notifications](docs/listen-notify.md) for setup, connection requirements,
+transaction semantics and upgrade instructions. The SQLx example below uses polling;
+enabling notifications requires a notification-capable pool such as `pgxadapter.New(nativePool)`.
+
 
 ```go
 package main
@@ -218,12 +239,19 @@ flowchart LR
 
 Tasks are fetched using `SELECT ... FOR NO KEY UPDATE SKIP LOCKED`, enabling safe concurrent processing across multiple consumers. The `blocked_till` column serves as both a delay mechanism (delayed enqueue, retry backoff) and a distributed lock expiry – a task re-appears for fetching only after `blocked_till` passes.
 
+Each claim increments `claim_generation`. Worker completion, failure, retry and snooze
+must match that generation and the `running` state, in both direct and batch paths.
+An expired attempt cannot overwrite a newer attempt or a cancelled task. Lease expiry
+can still produce overlapping handlers; these checks protect queue state, not external
+side effects or exactly-once execution.
+
 ### Packages
 
 | Package | Purpose |
 |---|---|
 | `producer/` | Enqueue tasks: `Enqueue`, `EnqueueTx`, `EnqueueMany`, `EnqueueManyTx` |
 | `consumer/` | Fetch and process tasks with configurable worker pools |
+| `adapter/pgxadapter/` | Adapt a caller-owned pgx pool to SQL/sqlx queries and notification receiving |
 | `client/` | Task inspection and management (get, list, cancel, retry, delete) |
 | `ui/` | HTTP handler serving REST API + embedded React SPA |
 
@@ -281,6 +309,7 @@ c, err := consumer.New(consumer.Config{
     ClientID:          "worker-1",       // optional, for leader election
     RetryPolicy:       retryPolicy,      // optional, default: exponential backoff
     FetchInterval:     100*time.Millisecond,
+    FetchCooldown:     10*time.Millisecond, // minimum spacing between fetches in both modes
     ShutdownTimeout:   30*time.Second,
     // Retention for completed/failed/cancelled tasks
     CompletedRetention: 24*time.Hour,
@@ -297,10 +326,12 @@ c, err := consumer.New(consumer.Config{
 ```go
 err := c.RegisterTaskHandler("email:send", handler,
     consumer.WithWorkersCount(10),          // goroutines for this task type
-    consumer.WithMaxAttempts(5),            // override default
     consumer.WithTimeout(30*time.Second),   // per-task execution timeout
 )
 ```
+
+Set the persisted retry budget when enqueueing, using `asynqpg.WithMaxRetry` or
+`producer.Config.DefaultMaxRetry`.
 
 Implement `consumer.TaskHandler` or use the `TaskHandlerFunc` adapter:
 
@@ -508,6 +539,23 @@ handler, err := ui.NewHandler(ui.HandlerOpts{
 http.Handle("/asynqpg/", handler)
 ```
 
+Attach local consumers with `HandlerOpts.ConsumerInfoFunc`, returning snapshots from
+`Consumer.Info()`. Workers only lists consumers attached in the dashboard's process;
+it does not discover other nodes. `Running` becomes true after a successful Start
+and false after shutdown completes (including any graceful drain). `StartedAt`
+remains the historical start time after stopping.
+
+`HandlerOpts.Maintenance` supplies assumptions for read-only rescue/cleanup previews.
+Share threshold and retention values with the consumer configuration; the dashboard
+does not read settings from the elected leader. A nil value uses library defaults;
+missing or nonpositive fields also use defaults. The API identifies these sources
+as `defaults` or `configured` (the latter may still contain defaulted fields).
+See `ExampleNewHandler_consumerInfo` for shared configuration and consumer wiring.
+Preview eligibility refreshes every 30 seconds and is not a guaranteed next-run
+result. Recent completion/failure counts cover retained finalized rows only, not a
+durable throughput history. Oldest-pending age includes delayed tasks and measures
+age since creation.
+
 The dashboard is a single-page React app embedded in the Go binary via `//go:embed`. It ships as four operator pages plus a profile/appearance page, with a command palette (⌘K), keyboard navigation (`j`/`k` to move, `x` to select), and light/dark themes that follow the system preference.
 
 ### Overview
@@ -687,11 +735,17 @@ Without these variables, the UI runs without authentication.
 
 ## Performance
 
-The library includes Go benchmarks covering SQL-level operations, batch completion, producer throughput, and consumer processing.
+LISTEN/NOTIFY primarily reduces enqueue-to-handler latency for sparse arrivals and
+bursts. Both modes continue draining a backlog when worker capacity becomes available;
+notifications are not required for that behavior and do not imply a higher sustained
+throughput ceiling.
 
-```bash
-make bench   # Run benchmarks (uses testcontainers, requires Docker)
-```
+A longer `FetchInterval` reduces idle claim queries, but increases discovery latency
+for delayed tasks, retries, snoozes, direct SQL writes and missed or suppressed hints.
+`FetchCooldown` controls fetch frequency under demand. Publication is rate-limited but
+still has a write cost, even when consumers use polling. Benchmark with your own payloads,
+handlers and database resources; library guarantees do not include a fixed latency SLA.
+See [notification semantics and tuning](docs/listen-notify.md).
 
 ## Testing
 
@@ -699,7 +753,6 @@ make bench   # Run benchmarks (uses testcontainers, requires Docker)
 make test              # unit tests (go test -race -count=1 ./...)
 make test-integration  # integration tests (uses testcontainers, no manual DB needed)
 make test-all          # both
-make bench             # benchmarks (integration, requires Docker)
 make lint              # golangci-lint
 ```
 

@@ -9,12 +9,14 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/yakser/asynqpg"
+	"github.com/yakser/asynqpg/internal/publisher"
 )
 
 // ClientRepository provides task inspection and management operations.
 // It covers client/management use cases: get, list, cancel, retry, delete by ID.
 type ClientRepository struct {
-	db asynqpg.Querier
+	db        asynqpg.Querier
+	publisher publisher.Limiter
 }
 
 // NewClientRepository creates a new ClientRepository backed by the given querier.
@@ -226,6 +228,10 @@ func (r *ClientRepository) RetryTaskByIDWithTx(ctx context.Context, tx asynqpg.T
 }
 
 func (r *ClientRepository) retryTaskInternal(ctx context.Context, q asynqpg.Querier, id int64) (*FullTask, bool, error) {
+	allowed, err := r.publisher.ForIDs(ctx, q, []int64{id})
+	if err != nil {
+		return nil, false, err
+	}
 	query := fmt.Sprintf(`WITH locked_task AS (
 		SELECT id, status, attempts_left
 		FROM asynqpg_tasks WHERE id = $1 FOR UPDATE
@@ -242,15 +248,15 @@ func (r *ClientRepository) retryTaskInternal(ctx context.Context, q asynqpg.Quer
 		WHERE asynqpg_tasks.id = locked_task.id
 		  AND locked_task.status IN ('failed', 'cancelled')
 		RETURNING asynqpg_tasks.*
-	)
-	SELECT %s, true AS was_modified FROM updated_task
+	)`+publisher.CTE("updated_task", "true", 2)+`
+	SELECT %s, true AS was_modified FROM updated_task CROSS JOIN (SELECT count(*) FROM readiness_hints) published
 	UNION ALL
 	SELECT %s, false AS was_modified FROM asynqpg_tasks t
 	JOIN locked_task lt ON t.id = lt.id
 	WHERE lt.id NOT IN (SELECT id FROM updated_task)`, fullTaskColumns, fullTaskColumnsAliased)
 
 	var results []fullTaskWithFlag
-	err := q.SelectContext(ctx, &results, query, id)
+	err = q.SelectContext(ctx, &results, query, id, pq.Array(allowed))
 	if err != nil {
 		return nil, false, fmt.Errorf("retry task: %w", err)
 	}

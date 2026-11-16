@@ -4,7 +4,9 @@ import type {
   AuthUser,
   BulkResponse,
   ConfigResponse,
+  ConsumerInfo,
   LeaderInfo,
+  MaintenanceInfo,
   StatsResponse,
   TaskDetail,
   TaskListParams,
@@ -70,6 +72,14 @@ export function getTasks(params: TaskListParams): Promise<TaskListResponse> {
 
 export function getLeader(): Promise<LeaderInfo> {
   return fetchAPI<LeaderInfo>("/cluster/leader")
+}
+
+export function getConsumers(): Promise<ConsumerInfo[]> {
+  return fetchAPI<ConsumerInfo[]>("/cluster/consumers")
+}
+
+export function getMaintenance(): Promise<MaintenanceInfo> {
+  return fetchAPI<MaintenanceInfo>("/cluster/maintenance")
 }
 
 export function getTask(id: number): Promise<TaskDetail> {

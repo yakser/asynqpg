@@ -57,7 +57,7 @@ export function FilterPill<T extends string>({
         aria-controls={menuId}
         aria-label={v ? `${k}: ${v}. Click to change.` : `Filter by ${k}`}
       >
-        <Icon name={v ? "check" : "plus"} size={12} />
+        <Icon name={v ? "check" : "plus"} size={12} strokeWidth={v ? 3 : 2.25} />
         <span className="k">{k}</span>
         {v ? (
           <>
@@ -159,6 +159,7 @@ export function FilterPill<T extends string>({
                   <Icon
                     name="check"
                     size={12}
+                    strokeWidth={3}
                     style={{ marginLeft: "auto", color: "var(--brand-600)" }}
                   />
                 )}

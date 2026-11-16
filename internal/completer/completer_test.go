@@ -116,8 +116,8 @@ func TestUnit_Complete_FlushesOnInterval(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, bc.Start(ctx))
 
-	require.NoError(t, bc.Complete(1))
-	require.NoError(t, bc.Complete(2))
+	require.NoError(t, bc.Complete(1, 1))
+	require.NoError(t, bc.Complete(2, 1))
 
 	require.Eventually(t, func() bool {
 		return counters.complete.Load() >= 2
@@ -137,7 +137,7 @@ func TestUnit_Fail_FlushesOnInterval(t *testing.T) {
 
 	require.NoError(t, bc.Start(context.Background()))
 
-	require.NoError(t, bc.Fail(10, "error msg"))
+	require.NoError(t, bc.Fail(10, 1, "error msg"))
 
 	require.Eventually(t, func() bool { return counters.fail.Load() > 0 }, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
@@ -164,7 +164,7 @@ func TestUnit_Retry_FlushesOnInterval(t *testing.T) {
 	require.NoError(t, bc.Start(context.Background()))
 
 	bt := time.Now().Add(5 * time.Second)
-	require.NoError(t, bc.Retry(20, bt, "retry reason"))
+	require.NoError(t, bc.Retry(20, 1, bt, "retry reason"))
 
 	require.Eventually(t, func() bool { return counters.retry.Load() > 0 }, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
@@ -190,9 +190,9 @@ func TestUnit_MixedOps_AllFlushed(t *testing.T) {
 
 	require.NoError(t, bc.Start(context.Background()))
 
-	_ = bc.Complete(1)
-	_ = bc.Fail(2, "fail msg")
-	_ = bc.Retry(3, time.Now().Add(time.Second), "retry msg")
+	_ = bc.Complete(1, 1)
+	_ = bc.Fail(2, 1, "fail msg")
+	_ = bc.Retry(3, 1, time.Now().Add(time.Second), "retry msg")
 
 	require.Eventually(t, func() bool {
 		return counters.complete.Load() > 0 && counters.fail.Load() > 0 && counters.retry.Load() > 0
@@ -234,9 +234,9 @@ func TestUnit_FlushOnThreshold(t *testing.T) {
 
 	require.NoError(t, bc.Start(context.Background()))
 
-	_ = bc.Complete(1)
-	_ = bc.Complete(2)
-	_ = bc.Complete(3) // threshold reached
+	_ = bc.Complete(1, 1)
+	_ = bc.Complete(2, 1)
+	_ = bc.Complete(3, 1) // threshold reached
 
 	require.Eventually(t, func() bool {
 		return completeCount.Load() > 0
@@ -280,9 +280,9 @@ func TestUnit_GracefulShutdown_Flushes(t *testing.T) {
 
 	require.NoError(t, bc.Start(context.Background()))
 
-	_ = bc.Complete(100)
-	_ = bc.Complete(101)
-	_ = bc.Fail(200, "fail")
+	_ = bc.Complete(100, 1)
+	_ = bc.Complete(101, 1)
+	_ = bc.Fail(200, 1, "fail")
 
 	// Stop immediately -- should do final flush
 	bc.Stop()
@@ -345,7 +345,7 @@ func TestUnit_WithRetries_RepoError_Logged(t *testing.T) {
 
 	require.NoError(t, bc.Start(context.Background()))
 
-	_ = bc.Complete(1)
+	_ = bc.Complete(1, 1)
 
 	require.Eventually(t, func() bool { return completeCallCount.Load() >= 1 }, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
@@ -375,7 +375,7 @@ func TestUnit_Backpressure(t *testing.T) {
 			if i >= 5 {
 				blocked.Store(true)
 			}
-			_ = bc.Complete(int64(i))
+			_ = bc.Complete(int64(i), 1)
 		}
 	})
 
@@ -392,20 +392,19 @@ func TestUnit_SameTask_LastWins(t *testing.T) {
 
 	require.NoError(t, bc.Start(context.Background()))
 
-	// Same task ID in different operation types
-	_ = bc.Retry(42, time.Now().Add(time.Second), "retry")
-	_ = bc.Fail(42, "fail")
-	_ = bc.Complete(42)
+	// Same task ID across three operation types collapses to the last one.
+	_ = bc.Retry(42, 1, time.Now().Add(time.Second), "retry")
+	_ = bc.Fail(42, 1, "fail")
+	_ = bc.Complete(42, 1)
 
-	// Wait for flush
 	require.Eventually(t, func() bool {
-		return counters.complete.Load() > 0 && counters.fail.Load() > 0 && counters.retry.Load() > 0
+		return counters.complete.Load() > 0
 	}, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
 
-	require.Greater(t, counters.complete.Load(), int64(0))
-	require.Greater(t, counters.fail.Load(), int64(0))
-	require.Greater(t, counters.retry.Load(), int64(0))
+	require.Equal(t, int64(1), counters.complete.Load())
+	require.Equal(t, int64(0), counters.fail.Load())
+	require.Equal(t, int64(0), counters.retry.Load())
 }
 
 func TestUnit_Snooze_FlushesOnInterval(t *testing.T) {
@@ -420,8 +419,8 @@ func TestUnit_Snooze_FlushesOnInterval(t *testing.T) {
 	snoozeTime1 := time.Now().Add(5 * time.Minute)
 	snoozeTime2 := time.Now().Add(10 * time.Minute)
 
-	require.NoError(t, bc.Snooze(1, snoozeTime1))
-	require.NoError(t, bc.Snooze(2, snoozeTime2))
+	require.NoError(t, bc.Snooze(1, 1, snoozeTime1))
+	require.NoError(t, bc.Snooze(2, 1, snoozeTime2))
 
 	require.Eventually(t, func() bool { return counters.snooze.Load() > 0 }, 2*time.Second, 10*time.Millisecond)
 	bc.Stop()
@@ -453,9 +452,9 @@ func TestUnit_Snooze_MixedWithComplete(t *testing.T) {
 
 	require.NoError(t, bc.Start(context.Background()))
 
-	require.NoError(t, bc.Complete(1))
-	require.NoError(t, bc.Snooze(2, time.Now().Add(5*time.Minute)))
-	require.NoError(t, bc.Complete(3))
+	require.NoError(t, bc.Complete(1, 1))
+	require.NoError(t, bc.Snooze(2, 1, time.Now().Add(5*time.Minute)))
+	require.NoError(t, bc.Complete(3, 1))
 
 	require.Eventually(t, func() bool {
 		return counters.complete.Load() > 0 && counters.snooze.Load() > 0
@@ -481,7 +480,7 @@ func TestUnit_ConcurrentOperations(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range 20 {
 		wg.Go(func() {
-			_ = bc.Complete(int64(i))
+			_ = bc.Complete(int64(i), 1)
 		})
 	}
 
@@ -494,4 +493,27 @@ func TestUnit_ConcurrentOperations(t *testing.T) {
 	// All 20 tasks should have been flushed (some may be in same call due to map dedup)
 	totalIDs := countCallIDs(repo, "CompleteTasksMany")
 	require.Equal(t, 20, totalIDs)
+}
+
+// A late old result must not replace the new claim's buffered outcome, even
+// when chunking and final shutdown flush happen together.
+func TestOwnership_BufferKeepsDistinctClaims(t *testing.T) {
+	t.Parallel()
+	repo := mocks.NewCompleterRepo(t)
+	repo.EXPECT().CompleteTasksMany(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, p repository.CompleteTasksManyParams) (int, error) {
+		require.Equal(t, []int64{42}, p.IDs)
+		require.Equal(t, []int64{1}, p.Generations)
+		return 0, nil
+	}).Once()
+	repo.EXPECT().RetryTasksMany(mock.Anything, mock.Anything).RunAndReturn(func(_ context.Context, p repository.RetryTasksManyParams) (int, error) {
+		require.Equal(t, []int64{42}, p.IDs)
+		require.Equal(t, []int64{2}, p.Generations)
+		require.Equal(t, []string{"new attempt"}, p.Messages)
+		return 1, nil
+	}).Once()
+	bc := newTestCompleter(repo, Config{MaxBatchSize: 1, FlushInterval: time.Hour})
+	require.NoError(t, bc.Start(context.Background()))
+	require.NoError(t, bc.Retry(42, 2, time.Now(), "new attempt"))
+	require.NoError(t, bc.Complete(42, 1))
+	bc.Stop()
 }

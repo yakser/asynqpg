@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -15,11 +17,13 @@ import (
 
 	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/internal/completer"
+	"github.com/yakser/asynqpg/internal/fetcher"
 	"github.com/yakser/asynqpg/internal/leadership"
 	"github.com/yakser/asynqpg/internal/lib/call"
 	"github.com/yakser/asynqpg/internal/lib/periodic"
 	"github.com/yakser/asynqpg/internal/lib/workerpool"
 	"github.com/yakser/asynqpg/internal/maintenance"
+	"github.com/yakser/asynqpg/internal/notify"
 	"github.com/yakser/asynqpg/internal/repository"
 )
 
@@ -46,22 +50,30 @@ type TaskHandler interface {
 type Completer interface {
 	Start(ctx context.Context) error
 	Stop()
-	Complete(taskID int64) error
-	Fail(taskID int64, message string) error
-	Retry(taskID int64, blockedTill time.Time, message string) error
-	Snooze(taskID int64, blockedTill time.Time) error
+	Complete(taskID, generation int64) error
+	Fail(taskID, generation int64, message string) error
+	Retry(taskID, generation int64, blockedTill time.Time, message string) error
+	Snooze(taskID, generation int64, blockedTill time.Time) error
 }
 
 //go:generate go tool mockery --case underscore --with-expecter --exported --name pool
 type pool = asynqpg.Pool
 
+type claimKey struct{ id, generation int64 }
+
 type Consumer struct {
-	pool        pool
-	repo        *repository.Repository
-	logger      *slog.Logger
-	retryPolicy asynqpg.RetryPolicy
-	metrics     *asynqpg.Metrics
-	tracer      trace.Tracer
+	notifications  *NotificationConfig
+	listener       *notify.Listener
+	notifyFetchers map[string]*fetcher.Runner
+	stopped        bool
+	shutdownOnce   sync.Once
+	shutdownDone   chan struct{}
+	pool           pool
+	repo           *repository.Repository
+	logger         *slog.Logger
+	retryPolicy    asynqpg.RetryPolicy
+	metrics        *asynqpg.Metrics
+	tracer         trace.Tracer
 
 	// Leadership and maintenance
 	elector    *leadership.Elector
@@ -76,7 +88,12 @@ type Consumer struct {
 
 	// activeTaskCancels tracks cancel functions for running tasks.
 	// Used to cancel handler context when a task is cancelled via CancelTask.
-	activeTaskCancels sync.Map // map[int64]context.CancelFunc
+	activeTaskCancels sync.Map // map[claimKey]context.CancelFunc
+
+	// clientID is the unique identifier of this consumer instance.
+	// Resolved once in New (generated if not provided) and shared with the elector.
+	clientID  string
+	startedAt time.Time
 
 	mu               sync.Mutex
 	started          bool
@@ -84,7 +101,7 @@ type Consumer struct {
 	cancel           context.CancelFunc
 	handlers         map[string]TaskHandler
 	wp               map[string]*workerpool.WorkerPool
-	fetchers         map[string]*periodic.Runner
+	fetchers         map[string]fetchRunner
 	janitors         map[string]*periodic.Runner
 	cancelChecker    *periodic.Runner
 	taskOptions      map[string]*TaskTypeOptions
@@ -92,6 +109,7 @@ type Consumer struct {
 
 	shutdownTimeout     time.Duration
 	fetchInterval       time.Duration
+	fetchCooldown       time.Duration
 	janitorInterval     time.Duration
 	stuckThreshold      time.Duration
 	cancelCheckInterval time.Duration
@@ -117,6 +135,11 @@ type Config struct {
 
 	ShutdownTimeout time.Duration
 	FetchInterval   time.Duration
+	// FetchCooldown bounds claim frequency in both modes. Default: min(10ms, FetchInterval).
+	// Explicit values must be >= 1ms and <= the effective FetchInterval.
+	FetchCooldown time.Duration
+	// Notifications enables optional wakeups; nil preserves polling-only behavior.
+	Notifications   *NotificationConfig
 	JanitorInterval time.Duration
 	// StuckThreshold is the duration after which a running task is considered stuck.
 	// Used by the rescuer to detect and recover stuck tasks.
@@ -167,7 +190,18 @@ func New(config Config) (*Consumer, error) {
 		return nil, fmt.Errorf("database pool is required")
 	}
 
+	if config.Notifications != nil {
+		if _, ok := config.Pool.(asynqpg.NotificationPool); !ok {
+			return nil, asynqpg.ErrNotificationsUnsupported
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
+
+	clientID := config.ClientID
+	if clientID == "" {
+		clientID = uuid.New().String()
+	}
 
 	completedRetention := config.CompletedRetention
 
@@ -188,11 +222,14 @@ func New(config Config) (*Consumer, error) {
 		retryPolicy:          config.RetryPolicy,
 		metrics:              m,
 		tracer:               asynqpg.NewTracer(config.TracerProvider),
+		clientID:             clientID,
 		ctx:                  ctx,
 		cancel:               cancel,
 		handlers:             make(map[string]TaskHandler),
 		wp:                   make(map[string]*workerpool.WorkerPool),
-		fetchers:             make(map[string]*periodic.Runner),
+		fetchers:             make(map[string]fetchRunner),
+		notifyFetchers:       make(map[string]*fetcher.Runner),
+		shutdownDone:         make(chan struct{}),
 		janitors:             make(map[string]*periodic.Runner),
 		taskOptions:          make(map[string]*TaskTypeOptions),
 		shutdownTimeout:      config.ShutdownTimeout,
@@ -211,6 +248,12 @@ func New(config Config) (*Consumer, error) {
 		errorHandler:         config.ErrorHandler,
 	}
 	consumer.setDefaults()
+	consumer.notifications = config.Notifications
+	consumer.fetchCooldown, err = validateFetchCooldown(config.FetchCooldown, consumer.fetchInterval)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 
 	// Initialize batch completer
 	if consumer.enableBatchCompleter {
@@ -219,7 +262,7 @@ func New(config Config) (*Consumer, error) {
 
 	// Initialize leadership and maintenance if enabled
 	if consumer.enableMaintenance {
-		consumer.initMaintenanceServices(config.ClientID)
+		consumer.initMaintenanceServices()
 	}
 
 	return consumer, nil
@@ -280,10 +323,10 @@ func (c *Consumer) initBatchCompleter(repo *repository.Repository, cfg *complete
 	c.completer = completer.NewBatchCompleter(repo, completerCfg)
 }
 
-func (c *Consumer) initMaintenanceServices(clientID string) {
+func (c *Consumer) initMaintenanceServices() {
 	// Create elector for leader election
 	c.elector = leadership.NewElector(c.pool, leadership.ElectorConfig{
-		ClientID: clientID,
+		ClientID: c.clientID,
 		Logger:   c.logger.With("component", "elector"),
 	})
 
@@ -313,55 +356,84 @@ func (c *Consumer) initMaintenanceServices(clientID string) {
 // If maintenance is enabled, it also starts leader election.
 func (c *Consumer) Start() error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.started {
+		c.mu.Unlock()
 		return fmt.Errorf("consumer is already started")
 	}
-
+	if c.stopped || c.ctx.Err() != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("consumer is stopped; create a new consumer")
+	}
 	if len(c.handlers) == 0 {
+		c.mu.Unlock()
 		return fmt.Errorf("no task handlers registered")
 	}
-
-	// Start batch completer if enabled
+	// Build all routes before the listener can synchronously request reconciliation.
+	for taskType := range c.handlers {
+		runner, err := c.createFetcher(taskType)
+		if err != nil {
+			return c.failStart(fmt.Errorf("create fetcher: %w", err))
+		}
+		c.fetchers[taskType] = runner
+	}
+	if c.notifications != nil {
+		listener, err := notify.New(notify.Config{Pool: c.pool.(asynqpg.NotificationPool), Logger: c.logger.With("consumer_id", c.clientID), Metrics: c.metrics,
+			OnType: func(taskType string) bool {
+				runner, ok := c.notifyFetchers[taskType]
+				if ok {
+					runner.Wake(fetcher.ReasonNotify)
+				}
+				return ok
+			},
+			OnReady: func() {
+				for _, runner := range c.notifyFetchers {
+					runner.Wake(fetcher.ReasonReconnect)
+				}
+			},
+		})
+		if err != nil {
+			return c.failStart(err)
+		}
+		c.listener = listener
+		if err = listener.Start(c.ctx); err != nil {
+			return c.failStart(err)
+		}
+	}
 	if c.enableBatchCompleter && c.completer != nil {
 		if err := c.completer.Start(context.Background()); err != nil {
-			return fmt.Errorf("start batch completer: %w", err)
+			return c.failStart(fmt.Errorf("start batch completer: %w", err))
 		}
 	}
-
-	// Start task fetchers
-	for taskType := range c.handlers {
-		if err := c.startFetcher(taskType); err != nil {
-			c.stopAll()
-			return fmt.Errorf("start fetcher for task type %s: %w", taskType, err)
+	for taskType, runner := range c.fetchers {
+		if err := runner.Start(c.ctx); err != nil {
+			return c.failStart(fmt.Errorf("start fetcher for %s: %w", taskType, err))
 		}
 	}
-
-	// Start cancel checker for graceful cancellation of running tasks
 	if err := c.startCancelChecker(); err != nil {
-		c.stopAll()
-		return fmt.Errorf("start cancel checker: %w", err)
+		return c.failStart(fmt.Errorf("start cancel checker: %w", err))
 	}
-
-	// Start leadership election if maintenance is enabled
 	if c.enableMaintenance && c.elector != nil {
 		if err := c.elector.Start(c.ctx); err != nil {
-			c.stopAll()
-			return fmt.Errorf("start elector: %w", err)
+			return c.failStart(fmt.Errorf("start elector: %w", err))
 		}
-
-		// Start goroutine to handle leadership changes
 		go c.handleLeadershipChanges()
 	}
-
 	c.started = true
-	c.logger.Info("consumer started",
-		"task_types", len(c.handlers),
-		"maintenance_enabled", c.enableMaintenance,
-		"batch_completer_enabled", c.enableBatchCompleter,
-	)
+	c.startedAt = time.Now()
+	c.logger.Info("consumer started", "task_types", len(c.handlers), "maintenance_enabled", c.enableMaintenance, "notifications_enabled", c.notifications != nil)
+	c.mu.Unlock()
 	return nil
+}
+
+// failStart is called with mu held. Release it before cleanup, which also takes mu.
+func (c *Consumer) failStart(err error) error {
+	c.stopped = true
+	c.cancel()
+	c.mu.Unlock()
+	if cleanupErr := c.shutdown(c.shutdownTimeout); cleanupErr != nil {
+		return fmt.Errorf("%w; cleanup: %v", err, cleanupErr)
+	}
+	return err
 }
 
 func (c *Consumer) handleLeadershipChanges() {
@@ -397,33 +469,37 @@ func (c *Consumer) Shutdown(timeout time.Duration) error {
 }
 
 func (c *Consumer) shutdown(timeout time.Duration) error {
-	c.mu.Lock()
-	if !c.started {
-		c.mu.Unlock()
-		return nil
-	}
-
-	c.logger.Info("consumer shutting down", "timeout", timeout.String())
+	// Cancellation must not wait for Start's mutex. Cleanup waits for startup
+	// to relinquish ownership, but that wait counts toward the caller's deadline.
 	c.cancel()
-	c.mu.Unlock()
-
-	done := make(chan struct{})
-	go func() {
-		c.stopAll()
-		close(done)
-	}()
-
+	c.shutdownOnce.Do(func() {
+		go func() {
+			c.mu.Lock()
+			c.stopped = true
+			c.mu.Unlock()
+			c.stopAll()
+			close(c.shutdownDone)
+		}()
+	})
 	select {
-	case <-done:
-		c.logger.Info("consumer stopped gracefully")
+	case <-c.shutdownDone:
 		return nil
-	case <-time.After(timeout):
-		c.logger.Error("consumer shutdown timeout exceeded")
+	default:
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-c.shutdownDone:
+		return nil
+	case <-timer.C:
 		return fmt.Errorf("shutdown timeout exceeded")
 	}
 }
 
 func (c *Consumer) stopAll() {
+	if c.listener != nil {
+		c.listener.Stop()
+	}
 	// Stop maintenance services first
 	if c.maintainer != nil {
 		c.logger.Debug("stopping maintainer")
@@ -468,37 +544,49 @@ func (c *Consumer) stopAll() {
 	c.mu.Unlock()
 }
 
-func (c *Consumer) startCancelChecker() error {
-	checkerTask := func(ctx context.Context) error {
-		// Collect active task IDs
-		var activeIDs []int64
-		c.activeTaskCancels.Range(func(key, _ any) bool {
-			activeIDs = append(activeIDs, key.(int64))
-			return true
-		})
+func (c *Consumer) checkCancelledTasks(ctx context.Context) error {
+	// Collect active task IDs
+	var activeIDs []int64
+	var activeClaims []claimKey
+	c.activeTaskCancels.Range(func(key, _ any) bool {
+		claim := key.(claimKey)
+		activeIDs = append(activeIDs, claim.id)
+		activeClaims = append(activeClaims, claim)
+		return true
+	})
 
-		if len(activeIDs) == 0 {
-			return nil
-		}
-
-		cancelledIDs, err := c.repo.GetCancelledTaskIDs(ctx, activeIDs)
-		if err != nil {
-			return fmt.Errorf("check cancelled tasks: %w", err)
-		}
-
-		for _, id := range cancelledIDs {
-			if cancelFn, ok := c.activeTaskCancels.LoadAndDelete(id); ok {
-				c.logger.Info("cancelling running task", "task_id", id)
-				cancelFn.(context.CancelFunc)()
-			}
-		}
-
+	if len(activeIDs) == 0 {
 		return nil
 	}
 
+	cancelledIDs, err := c.repo.GetCancelledTaskIDs(ctx, activeIDs)
+	if err != nil {
+		return fmt.Errorf("check cancelled tasks: %w", err)
+	}
+
+	// Only cancel claims in the pre-query snapshot. An overlapping reclaim may
+	// register a new generation while the database query is in flight.
+	cancelled := make(map[int64]struct{}, len(cancelledIDs))
+	for _, id := range cancelledIDs {
+		cancelled[id] = struct{}{}
+	}
+	for _, claim := range activeClaims {
+		if _, ok := cancelled[claim.id]; !ok {
+			continue
+		}
+		if cancelFn, ok := c.activeTaskCancels.LoadAndDelete(claim); ok {
+			c.logger.Info("cancelling running task", "task_id", claim.id, "claim_generation", claim.generation)
+			cancelFn.(context.CancelFunc)()
+		}
+	}
+
+	return nil
+}
+
+func (c *Consumer) startCancelChecker() error {
 	runner, err := periodic.New(periodic.Config{
 		Interval: c.cancelCheckInterval,
-		Task:     checkerTask,
+		Task:     c.checkCancelledTasks,
 		Logger:   c.logger.With("component", "cancel_checker"),
 	})
 	if err != nil {
@@ -554,7 +642,7 @@ func (c *Consumer) Use(mws ...MiddlewareFunc) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.started {
+	if c.started || c.stopped {
 		return fmt.Errorf("cannot add middleware after consumer is started")
 	}
 
@@ -571,7 +659,7 @@ func (c *Consumer) RegisterTaskHandler(taskType string, handler TaskHandler, opt
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.started {
+	if c.started || c.stopped {
 		return fmt.Errorf("cannot register handler after consumer is started")
 	}
 
@@ -601,83 +689,54 @@ func (c *Consumer) RegisterTaskHandler(taskType string, handler TaskHandler, opt
 	return nil
 }
 
-func (c *Consumer) startFetcher(taskType string) error {
-	handler := buildHandlerChain(c.handlers[taskType], c.globalMiddleware, c.taskOptions[taskType].Middleware)
-	wp := c.wp[taskType]
-	options := c.taskOptions[taskType]
+// Info returns a read-only snapshot of this consumer's configuration and live
+// worker utilization. It is safe to call at any time, including before Start.
+func (c *Consumer) Info() asynqpg.ConsumerInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	fetcherTask := func(ctx context.Context) error {
-		freeWorkers := wp.FreeWorkers()
-		if freeWorkers == 0 {
-			c.logger.Debug("fetcher no workers", "task_type", taskType)
-			return nil
+	taskTypes := make([]asynqpg.ConsumerTaskTypeInfo, 0, len(c.taskOptions))
+	for taskType, opts := range c.taskOptions {
+		var workers, busy int
+		if wp := c.wp[taskType]; wp != nil {
+			workers = wp.Workers()
+			busy = workers - wp.FreeWorkers()
 		}
-
-		// Lock duration should cover task execution timeout plus safety margin
-		// to prevent other pods from picking up the same task while it's being processed
-		lockDuration := options.Timeout + lockMargin
-		tasks, err := c.repo.GetReadyTasks(ctx, repository.GetReadyTasksParams{
-			Type:  taskType,
-			Limit: freeWorkers,
-			Delay: lockDuration,
+		taskTypes = append(taskTypes, asynqpg.ConsumerTaskTypeInfo{
+			Type:        taskType,
+			Workers:     workers,
+			Busy:        busy,
+			MaxAttempts: opts.MaxAttempts,
+			Timeout:     opts.Timeout,
 		})
-		if err != nil {
-			return fmt.Errorf("get ready tasks: %w", err)
-		}
-
-		if len(tasks) == 0 {
-			c.logger.Debug("no ready tasks available",
-				"task_type", taskType,
-			)
-			return nil
-		}
-
-		c.logger.Debug("got ready tasks",
-			"task_type", taskType,
-			"count", len(tasks),
-			"free_workers", freeWorkers,
-		)
-
-		for _, t := range tasks {
-			task := t
-			submitErr := wp.Submit(func() {
-				c.processTask(handler, &task, options.Timeout)
-			})
-			if submitErr != nil {
-				c.logger.Error("failed to submit task to worker pool",
-					"task_id", task.ID,
-					"error", submitErr,
-				)
-			}
-		}
-
-		return nil
 	}
-
-	runner, err := periodic.New(periodic.Config{
-		Interval: c.fetchInterval,
-		Task:     fetcherTask,
-		Logger:   c.logger.With("component", "fetcher", "task_type", taskType),
+	sort.Slice(taskTypes, func(i, j int) bool {
+		return taskTypes[i].Type < taskTypes[j].Type
 	})
-	if err != nil {
-		return fmt.Errorf("create fetcher: %w", err)
-	}
 
-	if err := runner.Start(c.ctx); err != nil {
-		return fmt.Errorf("start fetcher: %w", err)
+	return asynqpg.ConsumerInfo{
+		ID:                 c.clientID,
+		Running:            c.started,
+		IsLeader:           c.elector != nil && c.elector.IsLeader(),
+		MaintenanceEnabled: c.enableMaintenance,
+		StartedAt:          c.startedAt,
+		FetchInterval:      c.fetchInterval,
+		JanitorInterval:    c.janitorInterval,
+		StuckThreshold:     c.stuckThreshold,
+		ShutdownTimeout:    c.shutdownTimeout,
+		TaskTypes:          taskTypes,
 	}
-
-	c.fetchers[taskType] = runner
-	return nil
 }
 
 func (c *Consumer) processTask(handler TaskHandler, readyTask *repository.ReadyTask, timeout time.Duration) {
 	taskCtx, cancel := context.WithTimeout(c.ctx, timeout)
 	defer cancel()
 
-	// Track this task's cancel func so CancelTask can stop it.
-	c.activeTaskCancels.Store(readyTask.ID, cancel)
-	defer c.activeTaskCancels.Delete(readyTask.ID)
+	// Track each claim separately: cleanup of an older overlapping handler
+	// must not remove the newer attempt's cancellation function.
+	key := claimKey{readyTask.ID, readyTask.ClaimGeneration}
+	c.activeTaskCancels.Store(key, cancel)
+	defer c.activeTaskCancels.Delete(key)
 
 	taskCtx = asynqpg.WithTaskMetadata(taskCtx, asynqpg.TaskMetadata{
 		ID:         readyTask.ID,
@@ -806,7 +865,7 @@ func (c *Consumer) handleProcessResult(task *repository.ReadyTask, processErr er
 
 	// Use batch completer if enabled
 	if c.enableBatchCompleter && c.completer != nil {
-		if err := c.completer.Complete(task.ID); err != nil {
+		if err := c.completer.Complete(task.ID, task.ClaimGeneration); err != nil {
 			c.logger.Error("failed to queue task completion",
 				"task_id", task.ID,
 				"error", err,
@@ -818,7 +877,7 @@ func (c *Consumer) handleProcessResult(task *repository.ReadyTask, processErr er
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := c.repo.CompleteTasks(cleanupCtx, []int64{task.ID}); err != nil {
+		if err := c.repo.CompleteTasks(cleanupCtx, []int64{task.ID}, []int64{task.ClaimGeneration}); err != nil {
 			c.logger.Error("failed to mark task as completed",
 				"task_id", task.ID,
 				"error", err,
@@ -879,7 +938,7 @@ func (c *Consumer) handleTaskError(task *repository.ReadyTask, processErr error)
 
 		// Use batch completer if enabled
 		if c.enableBatchCompleter && c.completer != nil {
-			if err := c.completer.Retry(task.ID, nextRetryAt, processErr.Error()); err != nil {
+			if err := c.completer.Retry(task.ID, task.ClaimGeneration, nextRetryAt, processErr.Error()); err != nil {
 				c.logger.Error("failed to queue task retry",
 					"task_id", task.ID,
 					"error", err,
@@ -892,9 +951,10 @@ func (c *Consumer) handleTaskError(task *repository.ReadyTask, processErr error)
 			defer cancel()
 
 			if err := c.repo.RetryTask(ctx, repository.RetryTaskParams{
-				ID:          task.ID,
-				BlockedTill: nextRetryAt,
-				Message:     processErr.Error(),
+				ID:              task.ID,
+				ClaimGeneration: task.ClaimGeneration,
+				BlockedTill:     nextRetryAt,
+				Message:         processErr.Error(),
 			}); err != nil {
 				c.logger.Error("failed to schedule task retry",
 					"task_id", task.ID,
@@ -920,7 +980,7 @@ func (c *Consumer) handleTaskError(task *repository.ReadyTask, processErr error)
 func (c *Consumer) failTask(task *repository.ReadyTask, processErr error) error {
 	// Use batch completer if enabled
 	if c.enableBatchCompleter && c.completer != nil {
-		if err := c.completer.Fail(task.ID, processErr.Error()); err != nil {
+		if err := c.completer.Fail(task.ID, task.ClaimGeneration, processErr.Error()); err != nil {
 			c.logger.Error("failed to queue task failure",
 				"task_id", task.ID,
 				"error", err,
@@ -932,7 +992,7 @@ func (c *Consumer) failTask(task *repository.ReadyTask, processErr error) error 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := c.repo.FailTasks(ctx, []int64{task.ID}, processErr.Error()); err != nil {
+		if err := c.repo.FailTasks(ctx, []int64{task.ID}, []int64{task.ClaimGeneration}, processErr.Error()); err != nil {
 			c.logger.Error("failed to discard task",
 				"task_id", task.ID,
 				"error", err,
@@ -954,7 +1014,7 @@ func (c *Consumer) snoozeTask(task *repository.ReadyTask, duration time.Duration
 	)
 
 	if c.enableBatchCompleter && c.completer != nil {
-		if err := c.completer.Snooze(task.ID, snoozeTill); err != nil {
+		if err := c.completer.Snooze(task.ID, task.ClaimGeneration, snoozeTill); err != nil {
 			c.logger.Error("failed to queue task snooze",
 				"task_id", task.ID,
 				"error", err,
@@ -966,8 +1026,9 @@ func (c *Consumer) snoozeTask(task *repository.ReadyTask, duration time.Duration
 		defer cancel()
 
 		if err := c.repo.SnoozeTask(ctx, repository.SnoozeTaskParams{
-			ID:          task.ID,
-			BlockedTill: snoozeTill,
+			ID:              task.ID,
+			ClaimGeneration: task.ClaimGeneration,
+			BlockedTill:     snoozeTill,
 		}); err != nil {
 			c.logger.Error("failed to snooze task",
 				"task_id", task.ID,
@@ -995,7 +1056,7 @@ func (c *Consumer) retryTaskWithDelay(task *repository.ReadyTask, delay time.Dur
 	)
 
 	if c.enableBatchCompleter && c.completer != nil {
-		if err := c.completer.Retry(task.ID, nextRetryAt, processErr.Error()); err != nil {
+		if err := c.completer.Retry(task.ID, task.ClaimGeneration, nextRetryAt, processErr.Error()); err != nil {
 			c.logger.Error("failed to queue task retry (snooze with error)",
 				"task_id", task.ID,
 				"error", err,
@@ -1007,9 +1068,10 @@ func (c *Consumer) retryTaskWithDelay(task *repository.ReadyTask, delay time.Dur
 		defer cancel()
 
 		if err := c.repo.RetryTask(ctx, repository.RetryTaskParams{
-			ID:          task.ID,
-			BlockedTill: nextRetryAt,
-			Message:     processErr.Error(),
+			ID:              task.ID,
+			ClaimGeneration: task.ClaimGeneration,
+			BlockedTill:     nextRetryAt,
+			Message:         processErr.Error(),
 		}); err != nil {
 			c.logger.Error("failed to schedule task retry (snooze with error)",
 				"task_id", task.ID,

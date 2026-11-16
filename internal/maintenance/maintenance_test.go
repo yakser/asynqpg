@@ -229,8 +229,8 @@ func TestRescuer_RunOnce_RetryTasks(t *testing.T) {
 
 	repo := mocks.NewRescuerRepo(t)
 	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
-		{ID: 1, Type: taskTypeEmail, AttemptsLeft: 2, AttemptsElapsed: 1},
-		{ID: 2, Type: taskTypeEmail, AttemptsLeft: 1, AttemptsElapsed: 2},
+		{ID: 1, ClaimGeneration: 7, Type: taskTypeEmail, AttemptsLeft: 2, AttemptsElapsed: 1},
+		{ID: 2, ClaimGeneration: 9, Type: taskTypeEmail, AttemptsLeft: 1, AttemptsElapsed: 2},
 	}, nil).Once()
 
 	var retryParams []repository.RetryTaskParams
@@ -251,6 +251,8 @@ func TestRescuer_RunOnce_RetryTasks(t *testing.T) {
 	require.Len(t, retryParams, 2)
 	require.Equal(t, int64(1), retryParams[0].ID)
 	require.Equal(t, int64(2), retryParams[1].ID)
+	require.EqualValues(t, 7, retryParams[0].ClaimGeneration)
+	require.EqualValues(t, 9, retryParams[1].ClaimGeneration)
 	require.Equal(t, "Stuck task rescued by Rescuer", retryParams[0].Message)
 }
 
@@ -259,18 +261,19 @@ func TestRescuer_RunOnce_DiscardTasks(t *testing.T) {
 
 	repo := mocks.NewRescuerRepo(t)
 	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
-		{ID: 10, Type: taskTypeEmail, AttemptsLeft: 0, AttemptsElapsed: 3},
-		{ID: 11, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 5},
+		{ID: 10, ClaimGeneration: 11, Type: taskTypeEmail, AttemptsLeft: 0, AttemptsElapsed: 3},
+		{ID: 11, ClaimGeneration: 12, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 5},
 	}, nil).Once()
 
 	type failCall struct {
-		ids     []int64
-		message string
+		generations []int64
+		ids         []int64
+		message     string
 	}
 	var failCalls []failCall
-	repo.EXPECT().FailTasks(mock.Anything, mock.Anything, mock.Anything).
-		Run(func(_ context.Context, ids []int64, message string) {
-			failCalls = append(failCalls, failCall{ids: ids, message: message})
+	repo.EXPECT().FailTasks(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Run(func(_ context.Context, ids, generations []int64, message string) {
+			failCalls = append(failCalls, failCall{ids: ids, generations: generations, message: message})
 		}).
 		Return(nil).Times(2)
 
@@ -282,6 +285,8 @@ func TestRescuer_RunOnce_DiscardTasks(t *testing.T) {
 	require.Len(t, failCalls, 2)
 	require.Equal(t, int64(10), failCalls[0].ids[0])
 	require.Equal(t, int64(11), failCalls[1].ids[0])
+	require.Equal(t, []int64{11}, failCalls[0].generations)
+	require.Equal(t, []int64{12}, failCalls[1].generations)
 }
 
 func TestRescuer_RunOnce_MixedTasks(t *testing.T) {
@@ -289,13 +294,13 @@ func TestRescuer_RunOnce_MixedTasks(t *testing.T) {
 
 	repo := mocks.NewRescuerRepo(t)
 	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
-		{ID: 1, Type: taskTypeEmail, AttemptsLeft: 2, AttemptsElapsed: 1}, // retry
-		{ID: 2, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 3},         // discard
-		{ID: 3, Type: "push", AttemptsLeft: 1, AttemptsElapsed: 2},        // retry
+		{ID: 1, ClaimGeneration: 7, Type: taskTypeEmail, AttemptsLeft: 2, AttemptsElapsed: 1}, // retry
+		{ID: 2, Type: "sms", AttemptsLeft: 0, AttemptsElapsed: 3},                             // discard
+		{ID: 3, Type: "push", AttemptsLeft: 1, AttemptsElapsed: 2},                            // retry
 	}, nil).Once()
 
 	repo.EXPECT().RetryTask(mock.Anything, mock.Anything).Return(nil).Times(2)
-	repo.EXPECT().FailTasks(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+	repo.EXPECT().FailTasks(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	r := NewRescuer(repo, RescuerConfig{
 		BatchSize:   100,
@@ -369,7 +374,7 @@ func TestRescuer_RunOnce_FailError(t *testing.T) {
 	repo.EXPECT().GetStuckTasks(mock.Anything, mock.Anything).Return([]repository.StuckTask{
 		{ID: 1, AttemptsLeft: 0, AttemptsElapsed: 3},
 	}, nil).Once()
-	repo.EXPECT().FailTasks(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("fail failed")).Once()
+	repo.EXPECT().FailTasks(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("fail failed")).Once()
 
 	r := NewRescuer(repo, RescuerConfig{BatchSize: 100})
 

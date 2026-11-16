@@ -37,16 +37,20 @@ func SetupTestDatabase(t *testing.T) *sqlx.DB {
 // Useful for tests that need to open additional connections (e.g., via sql.Open or pgx).
 func SetupTestDatabaseWithConnStr(t *testing.T) (*sqlx.DB, string) {
 	t.Helper()
-	return setupDatabase(t, 10)
+	image := os.Getenv("ASYNQPG_TEST_POSTGRES_IMAGE")
+	if image == "" {
+		image = postgresImage
+	}
+	return setupDatabase(t, 10, image)
 }
 
-func setupDatabase(tb testing.TB, maxOpenConns int) (*sqlx.DB, string) {
+func setupDatabase(tb testing.TB, maxOpenConns int, image string) (*sqlx.DB, string) {
 	tb.Helper()
 
 	ctx := context.Background()
 
 	pgContainer, err := postgres.Run(ctx,
-		postgresImage,
+		image,
 		postgres.WithDatabase(postgresDB),
 		postgres.WithUsername(postgresUser),
 		postgres.WithPassword(postgresPassword),
@@ -54,6 +58,7 @@ func setupDatabase(tb testing.TB, maxOpenConns int) (*sqlx.DB, string) {
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2).
 				WithStartupTimeout(60*time.Second),
+			wait.ForListeningPort("5432/tcp"),
 		),
 	)
 	require.NoError(tb, err, "failed to start postgres container")
@@ -125,6 +130,7 @@ func applyMigrations(tb testing.TB, db *sqlx.DB) {
 
 	migrationFiles := []string{
 		"001_initial.sql",
+		"002_claim_generation.sql",
 	}
 
 	for _, file := range migrationFiles {
@@ -135,4 +141,30 @@ func applyMigrations(tb testing.TB, db *sqlx.DB) {
 		_, err = db.Exec(string(migrationSQL))
 		require.NoError(tb, err, "failed to apply migration %s", file)
 	}
+}
+
+// SetupTestDatabaseWithImage creates a test database using an explicit PostgreSQL image.
+func SetupTestDatabaseWithImage(t *testing.T, image string) (*sqlx.DB, string) {
+	t.Helper()
+	return setupDatabase(t, 10, image)
+}
+
+// ApplyReadyNotifications installs LEGACY triggers for upgrade tests only.
+// Normal notification tests and production deployments need no trigger installation.
+func ApplyReadyNotifications(t testing.TB, db *sqlx.DB) {
+	t.Helper()
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	script, err := os.ReadFile(filepath.Join(filepath.Dir(filename), "..", "migrations", "optional", "001_ready_notifications.up.sql"))
+	require.NoError(t, err)
+	tx, err := db.BeginTxx(context.Background(), nil)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+	var schema string
+	require.NoError(t, tx.Get(&schema, `SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = 'asynqpg_tasks'::regclass`))
+	_, err = tx.Exec("SET LOCAL search_path TO " + pq.QuoteIdentifier(schema) + ", pg_catalog")
+	require.NoError(t, err)
+	_, err = tx.Exec(string(script))
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
 }

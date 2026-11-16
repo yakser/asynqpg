@@ -14,13 +14,21 @@ function applyTheme(theme: Theme) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const stored = localStorage.getItem("theme")
-    if (stored === "light" || stored === "dark" || stored === "system") return stored
+    try {
+      const stored = localStorage.getItem("theme")
+      if (stored === "light" || stored === "dark" || stored === "system") return stored
+    } catch {
+      // localStorage unavailable (Safari private mode, locked-down browsers).
+    }
     return "system"
   })
 
   const setTheme = (t: Theme) => {
-    localStorage.setItem("theme", t)
+    try {
+      localStorage.setItem("theme", t)
+    } catch {
+      // best-effort: keep the selection in-memory if storage is unavailable.
+    }
     setThemeState(t)
   }
 

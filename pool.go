@@ -19,7 +19,7 @@ type Querier interface {
 }
 
 // Tx represents a database transaction.
-// *sql.Tx and *sqlx.Tx satisfy this interface natively.
+// *sqlx.Tx satisfies this interface natively; *sql.Tx lacks struct scanning methods.
 //
 //go:generate go tool mockery --case underscore --with-expecter --name Tx
 type Tx interface {

@@ -197,7 +197,7 @@ export function CmdK({ open, onClose }: CmdKProps): React.JSX.Element | null {
         icon: "hash",
         label: "Open task #" + t.id,
         sub: t.type + " · " + t.status,
-        action: () => navigate("/tasks/" + t.id),
+        action: () => navigate("/tasks?id=" + t.id),
       }))
       out = [...taskItems, ...out]
     }
@@ -223,6 +223,12 @@ export function CmdK({ open, onClose }: CmdKProps): React.JSX.Element | null {
       } else if (e.key === "ArrowUp") {
         e.preventDefault()
         setActive((a) => Math.max(0, a - 1))
+      } else if (e.key === "Home") {
+        e.preventDefault()
+        setActive(0)
+      } else if (e.key === "End") {
+        e.preventDefault()
+        setActive(Math.max(0, items.length - 1))
       } else if (e.key === "Enter") {
         e.preventDefault()
         const it = items[active]
@@ -237,6 +243,14 @@ export function CmdK({ open, onClose }: CmdKProps): React.JSX.Element | null {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [open, items, active, onClose])
+
+  // Keep the active item visible when navigating with the keyboard.
+  useEffect(() => {
+    if (!open) return
+    if (!items[active]) return
+    const el = document.getElementById(`${listboxId}-opt-${active}`)
+    el?.scrollIntoView({ block: "nearest" })
+  }, [open, active, items, listboxId])
 
   const grouped = useMemo(() => {
     const g: Record<ItemKind, IndexedItem[]> = { task: [], nav: [], action: [], type: [] }
@@ -280,6 +294,7 @@ export function CmdK({ open, onClose }: CmdKProps): React.JSX.Element | null {
             role="combobox"
             aria-expanded="true"
             aria-autocomplete="list"
+            inputMode="search"
           />
           <kbd aria-hidden="true">esc</kbd>
         </div>
