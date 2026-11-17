@@ -9,7 +9,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/lib/pq v1.12.3
 	github.com/stretchr/testify v1.11.1
-	github.com/yakser/asynqpg v0.0.0
+	github.com/yakser/asynqpg v0.2.0
 )
 
 require (
@@ -98,7 +98,5 @@ require (
 	golang.org/x/tools v0.42.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/yakser/asynqpg => ../
 
 tool github.com/vektra/mockery/v2

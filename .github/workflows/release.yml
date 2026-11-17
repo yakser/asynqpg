@@ -69,7 +69,7 @@ jobs:
         id: changelog
         with:
           config: cliff.toml
-          args: --latest --strip header
+          args: --strip header --tag-pattern '^ui/v[0-9].*' ui/v0.2.0..HEAD
         env:
           OUTPUT: CHANGELOG_RELEASE.md
           GITHUB_REPO: ${{ github.repository }}
