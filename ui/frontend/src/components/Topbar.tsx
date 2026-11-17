@@ -116,6 +116,7 @@ export function Topbar({ onCmdK, onToggleNav }: TopbarProps): React.JSX.Element 
         type="button"
         className="search-bar"
         onClick={onCmdK}
+        title="Search · ⌘K"
         aria-label="Open command palette"
       >
         <Icon name="search" size={14} />

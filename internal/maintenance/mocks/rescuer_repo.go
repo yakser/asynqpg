@@ -23,17 +23,17 @@ func (_m *RescuerRepo) EXPECT() *RescuerRepo_Expecter {
 	return &RescuerRepo_Expecter{mock: &_m.Mock}
 }
 
-// FailTasks provides a mock function with given fields: ctx, ids, message
-func (_m *RescuerRepo) FailTasks(ctx context.Context, ids []int64, message string) error {
-	ret := _m.Called(ctx, ids, message)
+// FailTasks provides a mock function with given fields: ctx, ids, generations, message
+func (_m *RescuerRepo) FailTasks(ctx context.Context, ids []int64, generations []int64, message string) error {
+	ret := _m.Called(ctx, ids, generations, message)
 
 	if len(ret) == 0 {
 		panic("no return value specified for FailTasks")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, []int64, string) error); ok {
-		r0 = rf(ctx, ids, message)
+	if rf, ok := ret.Get(0).(func(context.Context, []int64, []int64, string) error); ok {
+		r0 = rf(ctx, ids, generations, message)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -49,14 +49,15 @@ type RescuerRepo_FailTasks_Call struct {
 // FailTasks is a helper method to define mock.On call
 //   - ctx context.Context
 //   - ids []int64
+//   - generations []int64
 //   - message string
-func (_e *RescuerRepo_Expecter) FailTasks(ctx interface{}, ids interface{}, message interface{}) *RescuerRepo_FailTasks_Call {
-	return &RescuerRepo_FailTasks_Call{Call: _e.mock.On("FailTasks", ctx, ids, message)}
+func (_e *RescuerRepo_Expecter) FailTasks(ctx interface{}, ids interface{}, generations interface{}, message interface{}) *RescuerRepo_FailTasks_Call {
+	return &RescuerRepo_FailTasks_Call{Call: _e.mock.On("FailTasks", ctx, ids, generations, message)}
 }
 
-func (_c *RescuerRepo_FailTasks_Call) Run(run func(ctx context.Context, ids []int64, message string)) *RescuerRepo_FailTasks_Call {
+func (_c *RescuerRepo_FailTasks_Call) Run(run func(ctx context.Context, ids []int64, generations []int64, message string)) *RescuerRepo_FailTasks_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].([]int64), args[2].(string))
+		run(args[0].(context.Context), args[1].([]int64), args[2].([]int64), args[3].(string))
 	})
 	return _c
 }
@@ -66,7 +67,7 @@ func (_c *RescuerRepo_FailTasks_Call) Return(_a0 error) *RescuerRepo_FailTasks_C
 	return _c
 }
 
-func (_c *RescuerRepo_FailTasks_Call) RunAndReturn(run func(context.Context, []int64, string) error) *RescuerRepo_FailTasks_Call {
+func (_c *RescuerRepo_FailTasks_Call) RunAndReturn(run func(context.Context, []int64, []int64, string) error) *RescuerRepo_FailTasks_Call {
 	_c.Call.Return(run)
 	return _c
 }

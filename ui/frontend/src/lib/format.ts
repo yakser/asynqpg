@@ -14,6 +14,17 @@ export function fmtMs(ms: number | null | undefined): string {
   return (ms / 60_000).toFixed(1) + "m"
 }
 
+// Coarse duration from milliseconds, single unit: "30s", "5m", "24h", "7d".
+// Suited for config values and ages that span hours or days (fmtMs caps at minutes).
+export function fmtDur(ms: number | null | undefined): string {
+  if (ms == null) return "—"
+  const s = Math.round(ms / 1000)
+  if (s < 60) return s + "s"
+  if (s < 3600) return Math.round(s / 60) + "m"
+  if (s < 86400) return Math.round(s / 3600) + "h"
+  return Math.round(s / 86400) + "d"
+}
+
 // Byte formatting: 200B / 1.5KB / 2.0MB.
 export function fmtBytes(b: number | null | undefined): string {
   if (b == null) return "—"

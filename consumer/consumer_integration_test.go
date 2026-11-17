@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -329,8 +330,11 @@ func TestGracefulShutdown(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		started := make(chan struct{})
+		// Preserve the signal even if the handler starts before the test waits.
+		started := make(chan struct{}, 1)
 		blockingChan := make(chan struct{})
+		var releaseOnce sync.Once
+		release := func() { releaseOnce.Do(func() { close(blockingChan) }) }
 		blockingHandler := mocks.NewTaskHandler(t)
 		blockingHandler.EXPECT().Handle(mock.Anything, mock.Anything).
 			RunAndReturn(func(ctx context.Context, task *asynqpg.TaskInfo) error {
@@ -353,13 +357,22 @@ func TestGracefulShutdown(t *testing.T) {
 		err = c.RegisterTaskHandler("test-task", blockingHandler)
 		require.NoError(t, err)
 
+		t.Cleanup(func() {
+			release()
+			require.NoError(t, c.Stop())
+		})
+
 		err = c.Start()
 		require.NoError(t, err)
 
-		<-started
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("handler did not start")
+		}
 
 		err = c.Shutdown(100 * time.Millisecond)
-		close(blockingChan)
+		release()
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "shutdown timeout exceeded")
@@ -1167,13 +1180,15 @@ func TestTaskSnooze(t *testing.T) {
 		err = c.Stop()
 		require.NoError(t, err)
 
-		// Verify task completed and attempts_elapsed was NOT incremented by snooze
+		// Verify task completed and that the snooze itself did NOT count as an attempt:
+		// attempts_elapsed reflects only the second (successful) run, and attempts_left
+		// is left untouched.
 		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
 		require.NoError(t, err)
 		assert.Equal(t, "completed", task.Status, "task should be completed")
-		// attempts_elapsed should be 0 because snooze doesn't count and the second call succeeded
-		assert.Equal(t, 0, task.AttemptsElapsed, "attempts_elapsed should be 0 (snooze doesn't count)")
-		assert.Equal(t, maxRetry, task.AttemptsLeft, "attempts_left should be unchanged")
+		assert.Equal(t, 1, task.AttemptsElapsed, "attempts_elapsed should be 1 (snooze does not count, only the successful run)")
+		assert.Equal(t, maxRetry, task.AttemptsLeft, "attempts_left should be unchanged by the snooze")
+		assert.Empty(t, task.Messages, "successful run should not append an error message")
 	})
 
 	t.Run("wrapped snooze error detected", func(t *testing.T) {
@@ -1294,9 +1309,10 @@ func TestTaskSnoozeWithError(t *testing.T) {
 		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
 		require.NoError(t, err)
 		assert.Equal(t, "completed", task.Status, "task should be completed")
-		// attempts_elapsed should be 1 because snooze with error counts as attempt
-		assert.Equal(t, 1, task.AttemptsElapsed, "attempts_elapsed should be 1 (snooze with error counts)")
-		assert.Equal(t, maxRetry-1, task.AttemptsLeft, "attempts_left should be decremented by 1")
+		// snooze-with-error counts as an attempt (retry path bumps elapsed),
+		// then the successful run bumps elapsed again.
+		assert.Equal(t, 2, task.AttemptsElapsed, "attempts_elapsed should be 2 (snooze-with-error + successful run)")
+		assert.Equal(t, maxRetry-1, task.AttemptsLeft, "attempts_left should be decremented by 1 (only the snooze-with-error consumed a retry)")
 		assert.NotEmpty(t, task.Messages, "error message should be stored")
 	})
 
@@ -1351,10 +1367,15 @@ func TestTaskSnoozeWithError(t *testing.T) {
 		require.NoError(t, err)
 
 		// With maxRetry=1, the task has attempts_left=1, after processing attemptsLeft becomes 0
-		// So snooze with error should fail the task instead of snoozing
+		// So snooze with error should fail the task instead of snoozing.
+		// Final state must be dead-letter (attempts_left=0) so the UI's needs-retry vs
+		// dead-letter classification routes the task correctly.
 		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
 		require.NoError(t, err)
 		assert.Equal(t, "failed", task.Status, "task should be failed when no attempts left")
+		assert.Equal(t, 0, task.AttemptsLeft, "attempts_left must be 0 in dead-letter state")
+		assert.Equal(t, 1, task.AttemptsElapsed, "attempts_elapsed should count the single attempt")
+		require.Len(t, task.Messages, 1, "messages should contain the snooze-with-error message")
 		assert.Equal(t, int32(1), processed.Load(), "handler should be called exactly once")
 	})
 }
@@ -1552,10 +1573,14 @@ func TestSkipRetry(t *testing.T) {
 		err = c.Stop()
 		require.NoError(t, err)
 
-		// Verify task is in failed status after only 1 attempt
+		// Verify task is in dead-letter state after only 1 attempt
 		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
 		require.NoError(t, err)
 		assert.Equal(t, "failed", task.Status, "task should be in failed status")
+		assert.Equal(t, 0, task.AttemptsLeft, "attempts_left must be 0 so the task lands in dead-letter, not needs-retry")
+		assert.Equal(t, 1, task.AttemptsElapsed, "attempts_elapsed should reflect the single attempt that ran")
+		require.Len(t, task.Messages, 1, "messages should contain exactly one entry from the failed attempt")
+		assert.Contains(t, task.Messages[0], asynqpg.ErrSkipRetry.Error(), "stored message should carry the SkipRetry sentinel")
 		assert.Equal(t, int32(1), processed.Load(), "handler should be called exactly once")
 	})
 
@@ -1609,9 +1634,297 @@ func TestSkipRetry(t *testing.T) {
 		err = c.Stop()
 		require.NoError(t, err)
 
-		// Verify task is in failed status after only 1 attempt
+		// Verify task is in dead-letter state after only 1 attempt (wrapped sentinel still detected)
 		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
 		require.NoError(t, err)
 		assert.Equal(t, "failed", task.Status, "task should be in failed status")
+		assert.Equal(t, 0, task.AttemptsLeft, "attempts_left must be 0 so the task lands in dead-letter, not needs-retry")
+		assert.Equal(t, 1, task.AttemptsElapsed, "attempts_elapsed should reflect the single attempt that ran")
+		require.Len(t, task.Messages, 1, "messages should contain exactly one entry from the failed attempt")
+		assert.Contains(t, task.Messages[0], "invalid payload", "stored message should preserve the wrapping context")
+		assert.Contains(t, task.Messages[0], asynqpg.ErrSkipRetry.Error(), "stored message should still carry the wrapped sentinel")
 	})
+}
+
+// TestRetryExhaustion locks the dead-letter terminal state down: a task whose
+// handler always returns a regular error must end up at status='failed' with
+// attempts_left=0 and attempts_elapsed=MaxRetry. Until the FailTasks SQL was
+// fixed, attempts_left remained at 1 after the last failure, which silently
+// routed every exhausted task into the UI's "needs retry" view instead of
+// "dead-letter".
+func TestRetryExhaustion(t *testing.T) {
+	t.Parallel()
+
+	t.Run("always-failing handler ends in dead-letter state with all errors recorded", func(t *testing.T) {
+		t.Parallel()
+
+		db := testutils.SetupTestDatabase(t)
+
+		taskType := "retry_exhaustion_" + t.Name()
+		idempotencyToken := "retry-exhaustion-token-1"
+		const maxRetry = 3
+		var processed atomic.Int32
+
+		handler := mocks.NewTaskHandler(t)
+		handler.EXPECT().Handle(mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, _ *asynqpg.TaskInfo) error {
+				attempt := processed.Add(1)
+				return fmt.Errorf("simulated failure on attempt %d", attempt)
+			}).Maybe()
+
+		// ConstantRetryPolicy with a tight delay keeps the test under a second.
+		c, err := consumer.New(consumer.Config{
+			Pool:            db,
+			FetchInterval:   30 * time.Millisecond,
+			JanitorInterval: 10 * time.Second,
+			RetryPolicy:     &asynqpg.ConstantRetryPolicy{Delay: 30 * time.Millisecond},
+		})
+		require.NoError(t, err)
+
+		err = c.RegisterTaskHandler(taskType, handler, consumer.WithMaxAttempts(maxRetry))
+		require.NoError(t, err)
+
+		p, err := producer.New(producer.Config{
+			Pool:            db,
+			Logger:          slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+			DefaultMaxRetry: maxRetry,
+		})
+		require.NoError(t, err)
+
+		_, err = p.Enqueue(t.Context(), asynqpg.NewTask(taskType, []byte(`{}`),
+			asynqpg.WithMaxRetry(maxRetry),
+			asynqpg.WithIdempotencyToken(idempotencyToken),
+		))
+		require.NoError(t, err)
+
+		err = c.Start()
+		require.NoError(t, err)
+
+		assert.Eventually(t, func() bool {
+			return processed.Load() == int32(maxRetry)
+		}, 5*time.Second, 50*time.Millisecond, "handler should run exactly maxRetry times")
+
+		// Wait for the batch completer to flush the terminal failure to the DB.
+		assert.Eventually(t, func() bool {
+			task, getErr := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
+			return getErr == nil && task.Status == "failed"
+		}, 5*time.Second, 50*time.Millisecond, "task should reach failed status after exhausting retries")
+
+		err = c.Stop()
+		require.NoError(t, err)
+
+		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
+		require.NoError(t, err)
+
+		assert.Equal(t, "failed", task.Status, "exhausted task must be marked failed")
+		assert.Equal(t, 0, task.AttemptsLeft, "attempts_left must be 0 so the task is classified as dead-letter, not needs-retry")
+		assert.Equal(t, maxRetry, task.AttemptsElapsed, "attempts_elapsed must equal maxRetry once retries are exhausted")
+		require.Len(t, task.Messages, maxRetry, "every failed attempt must contribute exactly one message")
+		assert.Equal(t, int32(maxRetry), processed.Load(), "handler should run exactly maxRetry times")
+
+		// Each stored message corresponds to its attempt in order.
+		for i, msg := range task.Messages {
+			expected := fmt.Sprintf("simulated failure on attempt %d", i+1)
+			assert.Equal(t, expected, msg, "message %d should record the error from attempt %d", i, i+1)
+		}
+	})
+}
+
+// TestCompletion_BumpsAttemptsElapsed locks down the success-path counterpart
+// of TestRetryExhaustion: a task that runs to completion must record the
+// attempts that actually executed. Without the CompleteTasks SQL bumping
+// attempts_elapsed, a successfully-on-first-try task displays 0 attempts
+// even though the handler ran.
+func TestCompletion_BumpsAttemptsElapsed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("first-try success records exactly one attempt", func(t *testing.T) {
+		t.Parallel()
+
+		db := testutils.SetupTestDatabase(t)
+
+		taskType := "completion_first_try_" + t.Name()
+		idempotencyToken := "completion-first-token-1"
+		const maxRetry = 3
+		var processed atomic.Int32
+
+		handler := mocks.NewTaskHandler(t)
+		handler.EXPECT().Handle(mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, _ *asynqpg.TaskInfo) error {
+				processed.Add(1)
+				return nil
+			}).Maybe()
+
+		c, err := consumer.New(consumer.Config{
+			Pool:            db,
+			FetchInterval:   30 * time.Millisecond,
+			JanitorInterval: 10 * time.Second,
+		})
+		require.NoError(t, err)
+
+		err = c.RegisterTaskHandler(taskType, handler, consumer.WithMaxAttempts(maxRetry))
+		require.NoError(t, err)
+
+		p, err := producer.New(producer.Config{
+			Pool:            db,
+			Logger:          slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+			DefaultMaxRetry: maxRetry,
+		})
+		require.NoError(t, err)
+
+		_, err = p.Enqueue(t.Context(), asynqpg.NewTask(taskType, []byte(`{}`),
+			asynqpg.WithMaxRetry(maxRetry),
+			asynqpg.WithIdempotencyToken(idempotencyToken),
+		))
+		require.NoError(t, err)
+
+		err = c.Start()
+		require.NoError(t, err)
+
+		assert.Eventually(t, func() bool {
+			return processed.Load() == 1
+		}, 2*time.Second, 50*time.Millisecond, "handler should run exactly once")
+
+		// Wait for the batch completer to flush.
+		assert.Eventually(t, func() bool {
+			task, getErr := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
+			return getErr == nil && task.Status == "completed"
+		}, 5*time.Second, 50*time.Millisecond, "task should reach completed status")
+
+		err = c.Stop()
+		require.NoError(t, err)
+
+		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
+		require.NoError(t, err)
+
+		assert.Equal(t, "completed", task.Status, "task should be completed")
+		assert.Equal(t, 1, task.AttemptsElapsed, "attempts_elapsed must reflect the single successful run")
+		assert.Equal(t, maxRetry, task.AttemptsLeft, "attempts_left should be unchanged when the first attempt succeeds")
+		assert.Empty(t, task.Messages, "successful run should not append any messages")
+	})
+
+	t.Run("success after retries records every executed attempt", func(t *testing.T) {
+		t.Parallel()
+
+		db := testutils.SetupTestDatabase(t)
+
+		taskType := "completion_after_retries_" + t.Name()
+		idempotencyToken := "completion-after-token-1"
+		const maxRetry = 5
+		const failAttempts = 2
+		var processed atomic.Int32
+
+		handler := mocks.NewTaskHandler(t)
+		handler.EXPECT().Handle(mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, _ *asynqpg.TaskInfo) error {
+				attempt := processed.Add(1)
+				if attempt <= failAttempts {
+					return fmt.Errorf("simulated transient failure %d", attempt)
+				}
+				return nil
+			}).Maybe()
+
+		c, err := consumer.New(consumer.Config{
+			Pool:            db,
+			FetchInterval:   30 * time.Millisecond,
+			JanitorInterval: 10 * time.Second,
+			RetryPolicy:     &asynqpg.ConstantRetryPolicy{Delay: 30 * time.Millisecond},
+		})
+		require.NoError(t, err)
+
+		err = c.RegisterTaskHandler(taskType, handler, consumer.WithMaxAttempts(maxRetry))
+		require.NoError(t, err)
+
+		p, err := producer.New(producer.Config{
+			Pool:            db,
+			Logger:          slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
+			DefaultMaxRetry: maxRetry,
+		})
+		require.NoError(t, err)
+
+		_, err = p.Enqueue(t.Context(), asynqpg.NewTask(taskType, []byte(`{}`),
+			asynqpg.WithMaxRetry(maxRetry),
+			asynqpg.WithIdempotencyToken(idempotencyToken),
+		))
+		require.NoError(t, err)
+
+		err = c.Start()
+		require.NoError(t, err)
+
+		assert.Eventually(t, func() bool {
+			return processed.Load() >= int32(failAttempts+1)
+		}, 5*time.Second, 50*time.Millisecond, "handler should run until success")
+
+		assert.Eventually(t, func() bool {
+			task, getErr := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
+			return getErr == nil && task.Status == "completed"
+		}, 5*time.Second, 50*time.Millisecond, "task should reach completed status")
+
+		err = c.Stop()
+		require.NoError(t, err)
+
+		task, err := testutils.GetTaskByIdempotencyToken(t, db, idempotencyToken)
+		require.NoError(t, err)
+
+		const totalAttempts = failAttempts + 1
+		assert.Equal(t, "completed", task.Status, "task should be completed")
+		assert.Equal(t, totalAttempts, task.AttemptsElapsed, "attempts_elapsed should count both failed retries and the successful run")
+		assert.Equal(t, maxRetry-failAttempts, task.AttemptsLeft, "attempts_left should be decremented only by the failed retries")
+		require.Len(t, task.Messages, failAttempts, "messages should record every failed attempt but not the successful run")
+	})
+}
+
+func TestInfo_Lifecycle(t *testing.T) {
+	t.Parallel()
+	db := testutils.SetupTestDatabase(t)
+	c, err := consumer.New(consumer.Config{Pool: db, DisableMaintenance: true, FetchInterval: 10 * time.Millisecond})
+	require.NoError(t, err)
+	entered, release, draining := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(func() { unblock(); _ = c.Stop() })
+	require.NoError(t, c.RegisterTaskHandler("info.lifecycle", consumer.TaskHandlerFunc(func(ctx context.Context, _ *asynqpg.TaskInfo) error {
+		close(entered)
+		<-ctx.Done()
+		close(draining)
+		<-release
+		return nil
+	}), consumer.WithWorkersCount(1)))
+	before := c.Info()
+	assert.False(t, before.Running)
+	assert.True(t, before.StartedAt.IsZero())
+	require.NoError(t, c.Start())
+	started := c.Info()
+	assert.True(t, started.Running)
+	assert.False(t, started.StartedAt.IsZero())
+	_, err = db.ExecContext(context.Background(), `INSERT INTO asynqpg_tasks (type, payload, attempts_left, blocked_till) VALUES ('info.lifecycle', '{}', 3, now())`)
+	require.NoError(t, err)
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler did not start")
+	}
+	assert.Equal(t, 1, c.Info().TaskTypes[0].Busy)
+	stopped := make(chan error, 1)
+	go func() { stopped <- c.Stop() }()
+	select {
+	case <-draining:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdown did not cancel handler context")
+	}
+	for range 100 {
+		assert.True(t, c.Info().Running)
+	}
+	unblock()
+	select {
+	case err = <-stopped:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("consumer did not stop")
+	}
+	after := c.Info()
+	assert.False(t, after.Running)
+	assert.Equal(t, started.StartedAt, after.StartedAt)
+	assert.Equal(t, 1, after.TaskTypes[0].Workers)
+	assert.Zero(t, after.TaskTypes[0].Busy)
 }

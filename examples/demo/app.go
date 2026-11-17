@@ -44,13 +44,14 @@ type App struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	producer   *producer.Producer
-	consumer1  *consumer.Consumer
-	consumer2  *consumer.Consumer
-	httpServer *http.Server
-	otelProvs  *otelProviders
-	db         *sqlx.DB
-	logger     *slog.Logger
+	producer     *producer.Producer
+	consumer1    *consumer.Consumer
+	consumer2    *consumer.Consumer
+	httpServer   *http.Server
+	otelProvs    *otelProviders
+	db           *sqlx.DB
+	sessionStore *PostgresSessionStore
+	logger       *slog.Logger
 
 	emailProcessed  atomic.Int64
 	notifProcessed  atomic.Int64
@@ -98,6 +99,10 @@ func NewApp(cfg AppConfig) (*App, error) {
 	a.db = db
 	logger.Info("connected to database")
 
+	if err := ApplySessionsMigration(ctx, db); err != nil {
+		return nil, fmt.Errorf("apply sessions migration: %w", err)
+	}
+
 	p, err := producer.New(producer.Config{
 		Pool:           db,
 		Logger:         logger.With("component", "producer"),
@@ -113,6 +118,9 @@ func NewApp(cfg AppConfig) (*App, error) {
 		a.Seeded = a.seedTasks(cfg.InitialTasks)
 	}
 
+	maintenanceConfig := ui.MaintenanceConfig{
+		StuckThreshold: 2 * time.Minute, CompletedRetention: time.Hour, FailedRetention: 2 * time.Hour, CancelledRetention: time.Hour,
+	}
 	c1, err := consumer.New(consumer.Config{
 		Pool:               db,
 		Logger:             logger.With("component", "consumer-1"),
@@ -120,10 +128,10 @@ func NewApp(cfg AppConfig) (*App, error) {
 		TracerProvider:     otelProvs.TracerProvider,
 		ClientID:           "consumer-1",
 		FetchInterval:      200 * time.Millisecond,
-		StuckThreshold:     2 * time.Minute,
-		CompletedRetention: 1 * time.Hour,
-		FailedRetention:    2 * time.Hour,
-		CancelledRetention: 1 * time.Hour,
+		StuckThreshold:     maintenanceConfig.StuckThreshold,
+		CompletedRetention: maintenanceConfig.CompletedRetention,
+		FailedRetention:    maintenanceConfig.FailedRetention,
+		CancelledRetention: maintenanceConfig.CancelledRetention,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create consumer-1: %w", err)
@@ -131,7 +139,7 @@ func NewApp(cfg AppConfig) (*App, error) {
 
 	if err := c1.RegisterTaskHandler("email.send",
 		consumer.TaskHandlerFunc(func(_ context.Context, _ *asynqpg.TaskInfo) error {
-			return simulateWork(3000, 5, &a.emailProcessed)
+			return simulateWork(10, 100, &a.emailProcessed)
 		}),
 		consumer.WithWorkersCount(5),
 		consumer.WithTimeout(30*time.Second),
@@ -143,7 +151,7 @@ func NewApp(cfg AppConfig) (*App, error) {
 		consumer.TaskHandlerFunc(func(_ context.Context, _ *asynqpg.TaskInfo) error {
 			return simulateWork(1000, 2, &a.notifProcessed)
 		}),
-		consumer.WithWorkersCount(3),
+		consumer.WithWorkersCount(10),
 		consumer.WithTimeout(15*time.Second),
 	); err != nil {
 		return nil, fmt.Errorf("register notification handler: %w", err)
@@ -167,7 +175,7 @@ func NewApp(cfg AppConfig) (*App, error) {
 		consumer.TaskHandlerFunc(func(_ context.Context, _ *asynqpg.TaskInfo) error {
 			return simulateWork(2000, 10, &a.reportProcessed)
 		}),
-		consumer.WithWorkersCount(3),
+		consumer.WithWorkersCount(10),
 		consumer.WithTimeout(60*time.Second),
 	); err != nil {
 		return nil, fmt.Errorf("register report handler: %w", err)
@@ -186,10 +194,14 @@ func NewApp(cfg AppConfig) (*App, error) {
 	addr := envOr("ADDR", defaultAddr)
 	a.Addr = addr
 
-	uiHandler, authMode, err := buildUIHandler(db, logger)
+	consumerInfo := func() []asynqpg.ConsumerInfo {
+		return []asynqpg.ConsumerInfo{c1.Info(), c2.Info()}
+	}
+	uiHandler, authMode, sessionStore, err := buildUIHandler(ctx, db, logger, consumerInfo, maintenanceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create UI handler: %w", err)
 	}
+	a.sessionStore = sessionStore
 
 	srv := &http.Server{
 		Addr:         addr,
@@ -319,6 +331,9 @@ func (a *App) Shutdown() {
 	if a.otelProvs != nil {
 		a.otelProvs.Shutdown(shutdownCtx)
 	}
+	if a.sessionStore != nil {
+		a.sessionStore.Close()
+	}
 	if a.db != nil {
 		_ = a.db.Close()
 	}
@@ -442,13 +457,16 @@ func (a *App) generateTasks(ctx context.Context) {
 	}
 }
 
-func buildUIHandler(db *sqlx.DB, logger *slog.Logger) (http.Handler, string, error) {
+func buildUIHandler(ctx context.Context, db *sqlx.DB, logger *slog.Logger, consumerInfo func() []asynqpg.ConsumerInfo, maintenanceConfig ui.MaintenanceConfig) (http.Handler, string, *PostgresSessionStore, error) {
 	opts := ui.HandlerOpts{
-		Pool:   db,
-		Logger: logger.With("component", "ui"),
+		Pool:             db,
+		Logger:           logger.With("component", "ui"),
+		ConsumerInfoFunc: consumerInfo,
+		Maintenance:      &maintenanceConfig,
 	}
 
 	authMode := "No auth"
+	var sessionStore *PostgresSessionStore
 
 	basicUser := os.Getenv("BASIC_AUTH_USER")
 	basicPass := os.Getenv("BASIC_AUTH_PASS")
@@ -468,13 +486,21 @@ func buildUIHandler(db *sqlx.DB, logger *slog.Logger) (http.Handler, string, err
 		opts.AuthProviders = []ui.AuthProvider{
 			NewGitHubAuthProvider(clientID, clientSecret),
 		}
+		sessionStore = NewPostgresSessionStore(ctx, db, logger.With("component", "sessions"))
+		opts.SessionStore = sessionStore
 		authMode = "GitHub OAuth"
 	default:
 		logger.Info("running without authentication (set BASIC_AUTH_USER/BASIC_AUTH_PASS or GITHUB_CLIENT_ID/GITHUB_CLIENT_SECRET to enable)")
 	}
 
 	handler, err := ui.NewHandler(opts)
-	return handler, authMode, err
+	if err != nil {
+		if sessionStore != nil {
+			sessionStore.Close()
+		}
+		return nil, "", nil, err
+	}
+	return handler, authMode, sessionStore, nil
 }
 
 func simulateWork(baseMs, errorPct int, counter *atomic.Int64) error {

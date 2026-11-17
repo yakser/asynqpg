@@ -7,6 +7,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/yakser/asynqpg/adapter/pgxadapter"
+
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 
@@ -74,4 +78,29 @@ func ExampleConsumer_Use() {
 			return err
 		})
 	})
+}
+
+// ExampleNew_notifications configures a direct listener and a one-second safety poll.
+// No optional migration is required; library mutations publish atomically.
+func ExampleNew_notifications() {
+	native, err := pgxpool.New(context.Background(), "postgres://postgres:password@localhost:5432/asynqpg?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer native.Close()
+	db, err := pgxadapter.New(native)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	c, err := consumer.New(consumer.Config{
+		Pool:          db,
+		FetchInterval: time.Second,
+		FetchCooldown: 10 * time.Millisecond,
+		Notifications: &consumer.NotificationConfig{},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	_ = c // Register handlers, Start, and Stop using the normal application lifecycle.
 }

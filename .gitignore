@@ -29,11 +29,24 @@ go.work.sum
 .claude/
 .cursor/
 .agents/
+.codex/
+.gemini/
+.superpowers/
+.worktrees/
 plans/
 .playwright-mcp/
 skills-lock.json
+AGENTS.md
+AGENTS.override.md
 CLAUDE.md
+GEMINI.md
 WORKFLOW.md
+
+# Local agent plans, reviews, backlog and code index (not public documentation)
+/docs/superpowers/
+/docs/reviews/
+/docs/TODO.md
+/.codegraph/
 
 # OS generated files
 .DS_Store
@@ -95,17 +108,15 @@ docker-data/
 __pycache__/
 .ipynb_checkpoints/
 
-# Bench results (one JSON per run); keep .gitkeep so dir exists
-results/
-!results/.gitkeep
-bench/
+# Local benchmark infrastructure, baselines, statistics, and helper scripts
+/bench/
+/baseline/
+/results/
+/analysis/
+/.scripts/
 
 # Frontend node_modules (dist/ must stay committed for go:embed)
 ui/frontend/node_modules/
 
-.scripts/
-
-baseline/
-
-# Thesis analysis (Jupyter notebooks, exports)
-analysis/
+# Design reference (downloaded mockups)
+.design-ref/

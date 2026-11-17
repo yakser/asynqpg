@@ -5,6 +5,7 @@ package ui
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/require"
@@ -76,6 +77,32 @@ func insertCompletedTask(t *testing.T, db *sqlx.DB, taskType string) int64 {
 	)
 	require.NoError(t, err)
 	return id
+}
+
+// insertStuckRunningTask inserts a running task with an explicit attempted_at and
+// attempts_left, so rescue-preview tests can control whether it counts as stuck.
+func insertStuckRunningTask(t *testing.T, db *sqlx.DB, taskType string, attemptsLeft int, attemptedAt time.Time) {
+	t.Helper()
+
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO asynqpg_tasks (type, payload, status, attempts_left, blocked_till, attempted_at)
+		 VALUES ($1, '{}', 'running', $2, now() + interval '1 minute', $3)`,
+		taskType, attemptsLeft, attemptedAt,
+	)
+	require.NoError(t, err)
+}
+
+// insertFinalizedTask inserts a finalized task (completed/failed/cancelled) with an
+// explicit finalized_at, so cleanup-preview tests can control retention eligibility.
+func insertFinalizedTask(t *testing.T, db *sqlx.DB, taskType, status string, finalizedAt time.Time) {
+	t.Helper()
+
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO asynqpg_tasks (type, payload, status, attempts_left, blocked_till, finalized_at)
+		 VALUES ($1, '{}', $2, 0, now(), $3)`,
+		taskType, status, finalizedAt,
+	)
+	require.NoError(t, err)
 }
 
 func insertFailedTaskWithZeroAttempts(t *testing.T, db *sqlx.DB, taskType string) int64 {

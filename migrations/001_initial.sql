@@ -4,6 +4,7 @@ CREATE TYPE asynqpg_task_status AS ENUM (
 
 CREATE TABLE IF NOT EXISTS asynqpg_tasks (
     id BIGSERIAL PRIMARY KEY,
+    claim_generation BIGINT NOT NULL DEFAULT 0,
 
     attempts_left SMALLINT NOT NULL,
     attempts_elapsed SMALLINT DEFAULT 0 NOT NULL,

@@ -62,7 +62,7 @@ func (c *RescuerConfig) setDefaults() {
 type rescuerRepo interface {
 	GetStuckTasks(ctx context.Context, params repository.GetStuckTasksParams) ([]repository.StuckTask, error)
 	RetryTask(ctx context.Context, params repository.RetryTaskParams) error
-	FailTasks(ctx context.Context, ids []int64, message string) error
+	FailTasks(ctx context.Context, ids, generations []int64, message string) error
 }
 
 // Rescuer periodically rescues stuck tasks that have been running too long.
@@ -196,9 +196,10 @@ func (r *Rescuer) rescueBatch(ctx context.Context, tasks []repository.StuckTask)
 			nextRetryAt := time.Now().Add(nextRetryDelay)
 
 			if err := r.repo.RetryTask(ctx, repository.RetryTaskParams{
-				ID:          task.ID,
-				BlockedTill: nextRetryAt,
-				Message:     errorMsg,
+				ID:              task.ID,
+				ClaimGeneration: task.ClaimGeneration,
+				BlockedTill:     nextRetryAt,
+				Message:         errorMsg,
 			}); err != nil {
 				return retried, discarded, fmt.Errorf("retry task %d: %w", task.ID, err)
 			}
@@ -212,7 +213,7 @@ func (r *Rescuer) rescueBatch(ctx context.Context, tasks []repository.StuckTask)
 			retried++
 		} else {
 			// Discard the task
-			if err := r.repo.FailTasks(ctx, []int64{task.ID}, errorMsg); err != nil {
+			if err := r.repo.FailTasks(ctx, []int64{task.ID}, []int64{task.ClaimGeneration}, errorMsg); err != nil {
 				return retried, discarded, fmt.Errorf("discard task %d: %w", task.ID, err)
 			}
 

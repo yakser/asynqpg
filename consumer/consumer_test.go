@@ -23,7 +23,7 @@ func newMockPool(t *testing.T) *mocks.Pool {
 	p := mocks.NewPool(t)
 	p.EXPECT().PingContext(mock.Anything).Return(nil).Maybe()
 	p.EXPECT().ExecContext(mock.Anything, mock.Anything, mock.Anything).Return(testSQLResult{}, nil).Maybe()
-	p.EXPECT().SelectContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	p.EXPECT().SelectContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	p.EXPECT().GetContext(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	p.EXPECT().QueryContext(mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 	p.EXPECT().QueryRowContext(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -187,4 +187,57 @@ func TestUse_NilMiddleware(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Empty(t, c.globalMiddleware)
+}
+
+func TestInfo(t *testing.T) {
+	t.Parallel()
+
+	c, err := New(Config{
+		Pool:               newMockPool(t),
+		ClientID:           "consumer-test",
+		DisableMaintenance: true,
+		FetchInterval:      150 * time.Millisecond,
+		JanitorInterval:    20 * time.Second,
+		StuckThreshold:     3 * time.Minute,
+		ShutdownTimeout:    10 * time.Second,
+	})
+	require.NoError(t, err)
+	require.NoError(t, c.RegisterTaskHandler("email.send", newMockHandler(t),
+		WithWorkersCount(5), WithMaxAttempts(4), WithTimeout(30*time.Second)))
+	require.NoError(t, c.RegisterTaskHandler("report.generate", newMockHandler(t),
+		WithWorkersCount(2), WithTimeout(time.Minute)))
+
+	got := c.Info()
+
+	assert.Equal(t, "consumer-test", got.ID)
+	assert.False(t, got.Running)
+	assert.False(t, got.IsLeader)
+	assert.False(t, got.MaintenanceEnabled)
+	assert.True(t, got.StartedAt.IsZero(), "not started yet")
+	assert.Equal(t, 150*time.Millisecond, got.FetchInterval)
+	assert.Equal(t, 20*time.Second, got.JanitorInterval)
+	assert.Equal(t, 3*time.Minute, got.StuckThreshold)
+	assert.Equal(t, 10*time.Second, got.ShutdownTimeout)
+
+	require.Len(t, got.TaskTypes, 2)
+	// TaskTypes are sorted by type name.
+	assert.Equal(t, "email.send", got.TaskTypes[0].Type)
+	assert.Equal(t, 5, got.TaskTypes[0].Workers)
+	assert.Equal(t, 0, got.TaskTypes[0].Busy)
+	assert.Equal(t, 4, got.TaskTypes[0].MaxAttempts)
+	assert.Equal(t, 30*time.Second, got.TaskTypes[0].Timeout)
+	assert.Equal(t, "report.generate", got.TaskTypes[1].Type)
+	assert.Equal(t, 2, got.TaskTypes[1].Workers)
+}
+
+func TestInfo_GeneratesClientID(t *testing.T) {
+	t.Parallel()
+
+	c, err := New(Config{
+		Pool:               newMockPool(t),
+		DisableMaintenance: true,
+	})
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, c.Info().ID)
 }

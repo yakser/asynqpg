@@ -257,7 +257,7 @@ func TestCompleteTasks_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	err = repo.CompleteTasks(ctx, []int64{result.ID})
+	err = repo.CompleteTasks(ctx, []int64{result.ID}, firstGenerations([]int64{result.ID}))
 
 	// Assert
 	require.NoError(t, err)
@@ -292,7 +292,7 @@ func TestFailTasks_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	err = repo.FailTasks(ctx, []int64{result.ID}, "something went wrong")
+	err = repo.FailTasks(ctx, []int64{result.ID}, firstGenerations([]int64{result.ID}), "something went wrong")
 
 	// Assert
 	require.NoError(t, err)
@@ -332,7 +332,7 @@ func TestRetryTask_Basic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	err = repo.RetryTask(ctx, repository.RetryTaskParams{
+	err = repo.RetryTask(ctx, repository.RetryTaskParams{ClaimGeneration: 1,
 		ID:          result.ID,
 		BlockedTill: time.Now(),
 		Message:     "retrying due to transient error",
@@ -384,7 +384,7 @@ func TestSnoozeTask_Basic(t *testing.T) {
 	snoozeTill := time.Now().Add(10 * time.Minute)
 
 	// Act
-	err = repo.SnoozeTask(ctx, repository.SnoozeTaskParams{
+	err = repo.SnoozeTask(ctx, repository.SnoozeTaskParams{ClaimGeneration: 1,
 		ID:          result.ID,
 		BlockedTill: snoozeTill,
 	})
@@ -551,7 +551,7 @@ func TestDeleteOldTasks_Basic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = repo.CompleteTasks(ctx, []int64{result.ID})
+	err = repo.CompleteTasks(ctx, []int64{result.ID}, firstGenerations([]int64{result.ID}))
 	require.NoError(t, err)
 
 	// Manually backdate finalized_at

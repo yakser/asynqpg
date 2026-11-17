@@ -9,10 +9,12 @@ import (
 
 	"github.com/yakser/asynqpg"
 	"github.com/yakser/asynqpg/internal/lib/db"
+	"github.com/yakser/asynqpg/internal/publisher"
 )
 
 type Repository struct {
-	db asynqpg.Querier
+	db        asynqpg.Querier
+	publisher publisher.Limiter
 }
 
 func NewRepository(db asynqpg.Querier) *Repository {
@@ -54,12 +56,7 @@ func (p *Repository) PushTaskWithTx(ctx context.Context, tx asynqpg.Tx, task *Pu
 	return p.pushTaskInternal(ctx, tx, task)
 }
 
-func (p *Repository) pushTaskInternal(ctx context.Context, q asynqpg.Querier, task *PushTaskParams) (PushTaskResult, error) {
-	if task == nil {
-		return PushTaskResult{}, fmt.Errorf("task cannot be nil")
-	}
-
-	const query = `
+const pushTaskPlainQuery = `
 		INSERT INTO asynqpg_tasks (type, idempotency_token, payload, blocked_till, attempts_left)
 		VALUES ($1, $2, $3, now() + $4, $5)
 		ON CONFLICT (type, idempotency_token) WHERE idempotency_token IS NOT NULL
@@ -67,9 +64,43 @@ func (p *Repository) pushTaskInternal(ctx context.Context, q asynqpg.Querier, ta
 		RETURNING id, (xmax != 0) AS duplicate
 	`
 
+const pushTasksPlainQuery = `
+	INSERT INTO asynqpg_tasks (type, idempotency_token, payload, blocked_till, attempts_left)
+	SELECT
+		unnest($1::text[]),
+		unnest($2::text[]),
+		unnest($3::bytea[]),
+		now() + unnest($4::interval[]),
+		unnest($5::int[])
+	ON CONFLICT (type, idempotency_token) WHERE idempotency_token IS NOT NULL
+	DO UPDATE SET type = EXCLUDED.type
+	RETURNING id, (xmax != 0) AS duplicate
+`
+
+var pushTaskNotifyQuery = `WITH inserted AS (
+		INSERT INTO asynqpg_tasks (type, idempotency_token, payload, blocked_till, attempts_left)
+		VALUES ($1, $2, $3, now() + $4, $5)
+		ON CONFLICT (type, idempotency_token) WHERE idempotency_token IS NOT NULL
+		DO UPDATE SET type = EXCLUDED.type
+		RETURNING id, type, (xmax != 0) AS duplicate
+ )` + publisher.CTE("inserted", "NOT duplicate", 6) + `SELECT id, duplicate FROM inserted CROSS JOIN (SELECT count(*) FROM readiness_hints) published`
+
+func (p *Repository) pushTaskInternal(ctx context.Context, q asynqpg.Querier, task *PushTaskParams) (PushTaskResult, error) {
+	if task == nil {
+		return PushTaskResult{}, fmt.Errorf("task cannot be nil")
+	}
+
+	query := pushTaskNotifyQuery
+
+	allowed := p.publisher.Reserve([]string{task.Type})
+	args := []any{task.Type, task.IdempotencyToken, task.Payload, task.Delay, task.AttemptsLeft}
+	if len(allowed) == 0 {
+		query = pushTaskPlainQuery
+	} else {
+		args = append(args, pq.Array(allowed))
+	}
 	var result PushTaskResult
-	err := q.QueryRowContext(ctx, query,
-		task.Type, task.IdempotencyToken, task.Payload, task.Delay, task.AttemptsLeft).Scan(&result.ID, &result.Duplicate)
+	err := q.QueryRowContext(ctx, query, args...).Scan(&result.ID, &result.Duplicate)
 	if err != nil {
 		return PushTaskResult{}, fmt.Errorf("enqueue task: %w", err)
 	}
@@ -82,7 +113,7 @@ type PushTasksParams struct {
 	Tasks []PushTaskParams
 }
 
-const pushTasksQuery = `
+var pushTasksQuery = `WITH inserted AS (
 	INSERT INTO asynqpg_tasks (type, idempotency_token, payload, blocked_till, attempts_left)
 	SELECT
 		unnest($1::text[]),
@@ -92,8 +123,8 @@ const pushTasksQuery = `
 		unnest($5::int[])
 	ON CONFLICT (type, idempotency_token) WHERE idempotency_token IS NOT NULL
 	DO UPDATE SET type = EXCLUDED.type
-	RETURNING id, (xmax != 0) AS duplicate
-`
+	RETURNING id, type, (xmax != 0) AS duplicate
+)` + publisher.CTE("inserted", "NOT duplicate", 6) + `SELECT id, duplicate FROM inserted CROSS JOIN (SELECT count(*) FROM readiness_hints) published`
 
 // PushTasks inserts multiple tasks in a single batch operation.
 // Returns per-task results with IDs and duplicate flags.
@@ -116,14 +147,15 @@ func (p *Repository) PushTasks(ctx context.Context, params PushTasksParams) ([]P
 		attemptsLeft[i] = t.AttemptsLeft
 	}
 
+	allowed := p.publisher.Reserve(types)
+	query := pushTasksPlainQuery
+	args := []any{pq.Array(types), pq.Array(tokens), pq.Array(payloads), pq.Array(delays), pq.Array(attemptsLeft)}
+	if len(allowed) > 0 {
+		query = pushTasksQuery
+		args = append(args, pq.Array(allowed))
+	}
 	var results []PushTaskResult
-	err := p.db.SelectContext(ctx, &results, pushTasksQuery,
-		pq.Array(types),
-		pq.Array(tokens),
-		pq.Array(payloads),
-		pq.Array(delays),
-		pq.Array(attemptsLeft),
-	)
+	err := p.db.SelectContext(ctx, &results, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("batch insert tasks: %w", err)
 	}
@@ -151,14 +183,15 @@ func (p *Repository) PushTasksWithTx(ctx context.Context, tx asynqpg.Tx, params 
 		attemptsLeft[i] = t.AttemptsLeft
 	}
 
+	allowed := p.publisher.Reserve(types)
+	query := pushTasksPlainQuery
+	args := []any{pq.Array(types), pq.Array(tokens), pq.Array(payloads), pq.Array(delays), pq.Array(attemptsLeft)}
+	if len(allowed) > 0 {
+		query = pushTasksQuery
+		args = append(args, pq.Array(allowed))
+	}
 	var results []PushTaskResult
-	err := tx.SelectContext(ctx, &results, pushTasksQuery,
-		pq.Array(types),
-		pq.Array(tokens),
-		pq.Array(payloads),
-		pq.Array(delays),
-		pq.Array(attemptsLeft),
-	)
+	err := tx.SelectContext(ctx, &results, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("batch insert tasks: %w", err)
 	}
@@ -173,6 +206,7 @@ type GetReadyTasksParams struct {
 }
 
 type ReadyTask struct {
+	ClaimGeneration  int64          `db:"claim_generation"`
 	ID               int64          `db:"id"`
 	Type             string         `db:"type"`
 	Payload          []byte         `db:"payload"`
@@ -188,6 +222,7 @@ func (p *Repository) GetReadyTasks(ctx context.Context, params GetReadyTasksPara
 	const query = `
 	update asynqpg_tasks set
 		status = 'running',
+		claim_generation = claim_generation + 1,
 		blocked_till = now() + $3::interval,
 		attempted_at = now(),
 		updated_at = now()
@@ -201,7 +236,7 @@ func (p *Repository) GetReadyTasks(ctx context.Context, params GetReadyTasksPara
 		limit $2
 		for no key update skip locked
 	)
-	returning id, type, payload, idempotency_token, attempts_left, attempts_elapsed, created_at, messages, attempted_at
+	returning id, claim_generation, type, payload, idempotency_token, attempts_left, attempts_elapsed, created_at, messages, attempted_at
 	`
 
 	var tasks []ReadyTask
@@ -213,21 +248,10 @@ func (p *Repository) GetReadyTasks(ctx context.Context, params GetReadyTasksPara
 	return tasks, nil
 }
 
-func (p *Repository) CompleteTasks(ctx context.Context, ids []int64) error {
-	const query = `
-	update asynqpg_tasks set
-		status = 'completed',
-		finalized_at = now(),
-		updated_at = now()
-	where id = any($1)
-	`
-
-	_, err := p.db.ExecContext(ctx, query, pq.Array(ids))
-	if err != nil {
-		return fmt.Errorf("complete tasks: %w", err)
-	}
-
-	return nil
+// CompleteTasks applies worker outcomes only to the matching running claims.
+func (p *Repository) CompleteTasks(ctx context.Context, ids, generations []int64) error {
+	_, err := p.CompleteTasksMany(ctx, CompleteTasksManyParams{IDs: ids, Generations: generations})
+	return err
 }
 
 func (p *Repository) DeleteTasks(ctx context.Context, ids []int64) error {
@@ -244,74 +268,59 @@ func (p *Repository) DeleteTasks(ctx context.Context, ids []int64) error {
 	return nil
 }
 
-func (p *Repository) FailTasks(ctx context.Context, ids []int64, message string) error {
-	const query = `
-	update asynqpg_tasks set
-		status = 'failed',
-		finalized_at = now(),
-		messages = array_append(messages, $2),
-		updated_at = now()
-	where id = any($1)
-	`
-
-	_, err := p.db.ExecContext(ctx, query, pq.Array(ids), message)
-	if err != nil {
-		return fmt.Errorf("mark tasks as failed: %w", err)
+func (p *Repository) FailTasks(ctx context.Context, ids, generations []int64, message string) error {
+	messages := make([]string, len(ids))
+	for i := range messages {
+		messages[i] = message
 	}
-
-	return nil
+	_, err := p.FailTasksMany(ctx, FailTasksManyParams{IDs: ids, Generations: generations, Messages: messages})
+	return err
 }
 
 type RetryTaskParams struct {
-	ID          int64
-	BlockedTill time.Time
-	Message     string
+	ClaimGeneration int64
+	ID              int64
+	BlockedTill     time.Time
+	Message         string
 }
 
 // RetryTask schedules a task for retry with a new blocked_till time.
 // Decrements attempts_left and increments attempts_elapsed.
 func (p *Repository) RetryTask(ctx context.Context, params RetryTaskParams) error {
-	const query = `
-	update asynqpg_tasks set
-		status = 'pending',
-		finalized_at = NULL,
-		blocked_till = $2,
-		attempts_left = attempts_left - 1,
-		attempts_elapsed = attempts_elapsed + 1,
-		messages = array_append(messages, $3),
-		updated_at = now()
-	where id = $1
-	`
-
-	_, err := p.db.ExecContext(ctx, query, params.ID, params.BlockedTill, params.Message)
-	if err != nil {
-		return fmt.Errorf("retry task: %w", err)
-	}
-
-	return nil
+	_, err := p.RetryTasksMany(ctx, RetryTasksManyParams{IDs: []int64{params.ID}, Generations: []int64{params.ClaimGeneration}, BlockedTills: []time.Time{params.BlockedTill}, Messages: []string{params.Message}})
+	return err
 }
 
 // CompleteTasksManyParams contains parameters for batch task completion.
 type CompleteTasksManyParams struct {
-	IDs []int64
+	Generations []int64 // One claim generation per ID; required, including generation zero.
+	IDs         []int64
 }
 
 // CompleteTasksMany marks multiple tasks as completed in a single batch operation.
 // Returns the number of tasks actually completed.
 func (p *Repository) CompleteTasksMany(ctx context.Context, params CompleteTasksManyParams) (int, error) {
+	if len(params.IDs) != len(params.Generations) {
+		return 0, fmt.Errorf("ids and generations must have same length")
+	}
 	if len(params.IDs) == 0 {
 		return 0, nil
 	}
 
+	// attempts_elapsed is bumped because the attempt that completed did run;
+	// without this, a task that succeeded on its first try would still report
+	// attempts_elapsed=0.
 	const query = `
 	UPDATE asynqpg_tasks SET
 		status = 'completed',
 		finalized_at = now(),
+		attempts_elapsed = attempts_elapsed + 1,
 		updated_at = now()
-	WHERE id = ANY($1) AND status = 'running'
+	FROM unnest($1::bigint[], $2::bigint[]) AS input(id, generation)
+	WHERE asynqpg_tasks.id = input.id AND asynqpg_tasks.claim_generation = input.generation AND status = 'running'
 	`
 
-	result, err := p.db.ExecContext(ctx, query, pq.Array(params.IDs))
+	result, err := p.db.ExecContext(ctx, query, pq.Array(params.IDs), pq.Array(params.Generations))
 	if err != nil {
 		return 0, fmt.Errorf("complete tasks: %w", err)
 	}
@@ -326,13 +335,17 @@ func (p *Repository) CompleteTasksMany(ctx context.Context, params CompleteTasks
 
 // FailTasksManyParams contains parameters for batch task failure.
 type FailTasksManyParams struct {
-	IDs      []int64
-	Messages []string // One message per task (must be same length as IDs)
+	Generations []int64 // One claim generation per ID; required, including generation zero.
+	IDs         []int64
+	Messages    []string // One message per task (must be same length as IDs)
 }
 
 // FailTasksMany marks multiple tasks as failed with individual error messages.
 // Returns the number of tasks actually failed.
 func (p *Repository) FailTasksMany(ctx context.Context, params FailTasksManyParams) (int, error) {
+	if len(params.IDs) != len(params.Generations) {
+		return 0, fmt.Errorf("ids and generations must have same length")
+	}
 	if len(params.IDs) == 0 {
 		return 0, nil
 	}
@@ -341,22 +354,31 @@ func (p *Repository) FailTasksMany(ctx context.Context, params FailTasksManyPara
 		return 0, fmt.Errorf("ids and messages must have same length")
 	}
 
+	// attempts_left is forced to 0 so dead-letter classification
+	// (status='failed' AND attempts_left=0) holds even on the SkipRetry path,
+	// where a task may be terminally failed before its retries are exhausted.
+	// attempts_elapsed is bumped because the attempt that produced this error
+	// did run; this keeps len(messages) == attempts_elapsed in both retry and
+	// terminal paths.
 	const query = `
 	WITH task_input AS (
 		SELECT
 			unnest($1::bigint[]) AS id,
+			unnest($3::bigint[]) AS generation,
 			unnest($2::text[]) AS message
 	)
 	UPDATE asynqpg_tasks SET
 		status = 'failed',
 		finalized_at = now(),
+		attempts_left = 0,
+		attempts_elapsed = asynqpg_tasks.attempts_elapsed + 1,
 		messages = array_append(asynqpg_tasks.messages, task_input.message),
 		updated_at = now()
 	FROM task_input
-	WHERE asynqpg_tasks.id = task_input.id AND asynqpg_tasks.status = 'running'
+	WHERE asynqpg_tasks.id = task_input.id AND asynqpg_tasks.claim_generation = task_input.generation AND asynqpg_tasks.status = 'running'
 	`
 
-	result, err := p.db.ExecContext(ctx, query, pq.Array(params.IDs), pq.Array(params.Messages))
+	result, err := p.db.ExecContext(ctx, query, pq.Array(params.IDs), pq.Array(params.Messages), pq.Array(params.Generations))
 	if err != nil {
 		return 0, fmt.Errorf("fail tasks: %w", err)
 	}
@@ -371,6 +393,7 @@ func (p *Repository) FailTasksMany(ctx context.Context, params FailTasksManyPara
 
 // RetryTasksManyParams contains parameters for batch task retry.
 type RetryTasksManyParams struct {
+	Generations  []int64 // One claim generation per ID; required, including generation zero.
 	IDs          []int64
 	BlockedTills []time.Time // One blocked_till per task
 	Messages     []string    // One message per task
@@ -380,6 +403,9 @@ type RetryTasksManyParams struct {
 // Decrements attempts_left and increments attempts_elapsed for each task.
 // Returns the number of tasks actually retried.
 func (p *Repository) RetryTasksMany(ctx context.Context, params RetryTasksManyParams) (int, error) {
+	if len(params.IDs) != len(params.Generations) {
+		return 0, fmt.Errorf("ids and generations must have same length")
+	}
 	if len(params.IDs) == 0 {
 		return 0, nil
 	}
@@ -388,10 +414,11 @@ func (p *Repository) RetryTasksMany(ctx context.Context, params RetryTasksManyPa
 		return 0, fmt.Errorf("ids, blocked tills, and messages must have same length")
 	}
 
-	const query = `
+	mutation := `
 	WITH task_input AS (
 		SELECT
 			unnest($1::bigint[]) AS id,
+			unnest($4::bigint[]) AS generation,
 			unnest($2::timestamptz[]) AS blocked_till,
 			unnest($3::text[]) AS message
 	)
@@ -404,13 +431,22 @@ func (p *Repository) RetryTasksMany(ctx context.Context, params RetryTasksManyPa
 		messages = array_append(asynqpg_tasks.messages, task_input.message),
 		updated_at = now()
 	FROM task_input
-	WHERE asynqpg_tasks.id = task_input.id AND asynqpg_tasks.status = 'running'
+	WHERE asynqpg_tasks.id = task_input.id AND asynqpg_tasks.claim_generation = task_input.generation AND asynqpg_tasks.status = 'running'
+ RETURNING asynqpg_tasks.type
 	`
+
+	allowed, err := p.publisher.ForIDs(ctx, p.db, params.IDs)
+	if err != nil {
+		return 0, err
+	}
+	query := "WITH changed AS (" + mutation + ")" + publisher.CTE("changed", "true", 5) + `SELECT type FROM changed CROSS JOIN (SELECT count(*) FROM readiness_hints) published`
 
 	result, err := p.db.ExecContext(ctx, query,
 		pq.Array(params.IDs),
 		pq.Array(params.BlockedTills),
 		pq.Array(params.Messages),
+		pq.Array(params.Generations),
+		pq.Array(allowed),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("retry tasks: %w", err)
@@ -426,32 +462,21 @@ func (p *Repository) RetryTasksMany(ctx context.Context, params RetryTasksManyPa
 
 // SnoozeTaskParams contains parameters for snoozing a single task.
 type SnoozeTaskParams struct {
-	ID          int64
-	BlockedTill time.Time
+	ClaimGeneration int64
+	ID              int64
+	BlockedTill     time.Time
 }
 
 // SnoozeTask reschedules a task without counting it as an attempt.
 // Unlike RetryTask, it does NOT decrement attempts_left or increment attempts_elapsed.
 func (p *Repository) SnoozeTask(ctx context.Context, params SnoozeTaskParams) error {
-	const query = `
-	UPDATE asynqpg_tasks SET
-		status = 'pending',
-		finalized_at = NULL,
-		blocked_till = $2,
-		updated_at = now()
-	WHERE id = $1
-	`
-
-	_, err := p.db.ExecContext(ctx, query, params.ID, params.BlockedTill)
-	if err != nil {
-		return fmt.Errorf("snooze task: %w", err)
-	}
-
-	return nil
+	_, err := p.SnoozeTasksMany(ctx, SnoozeTasksManyParams{IDs: []int64{params.ID}, Generations: []int64{params.ClaimGeneration}, BlockedTills: []time.Time{params.BlockedTill}})
+	return err
 }
 
 // SnoozeTasksManyParams contains parameters for batch task snooze.
 type SnoozeTasksManyParams struct {
+	Generations  []int64 // One claim generation per ID; required, including generation zero.
 	IDs          []int64
 	BlockedTills []time.Time
 }
@@ -459,6 +484,9 @@ type SnoozeTasksManyParams struct {
 // SnoozeTasksMany reschedules multiple tasks without counting as attempts.
 // Returns the number of tasks actually snoozed.
 func (p *Repository) SnoozeTasksMany(ctx context.Context, params SnoozeTasksManyParams) (int, error) {
+	if len(params.IDs) != len(params.Generations) {
+		return 0, fmt.Errorf("ids and generations must have same length")
+	}
 	if len(params.IDs) == 0 {
 		return 0, nil
 	}
@@ -467,10 +495,11 @@ func (p *Repository) SnoozeTasksMany(ctx context.Context, params SnoozeTasksMany
 		return 0, fmt.Errorf("ids and blocked tills must have same length")
 	}
 
-	const query = `
+	mutation := `
 	WITH task_input AS (
 		SELECT
 			unnest($1::bigint[]) AS id,
+			unnest($3::bigint[]) AS generation,
 			unnest($2::timestamptz[]) AS blocked_till
 	)
 	UPDATE asynqpg_tasks SET
@@ -479,12 +508,21 @@ func (p *Repository) SnoozeTasksMany(ctx context.Context, params SnoozeTasksMany
 		blocked_till = task_input.blocked_till,
 		updated_at = now()
 	FROM task_input
-	WHERE asynqpg_tasks.id = task_input.id AND asynqpg_tasks.status = 'running'
+	WHERE asynqpg_tasks.id = task_input.id AND asynqpg_tasks.claim_generation = task_input.generation AND asynqpg_tasks.status = 'running'
+ RETURNING asynqpg_tasks.type
 	`
+
+	allowed, err := p.publisher.ForIDs(ctx, p.db, params.IDs)
+	if err != nil {
+		return 0, err
+	}
+	query := "WITH changed AS (" + mutation + ")" + publisher.CTE("changed", "true", 4) + `SELECT type FROM changed CROSS JOIN (SELECT count(*) FROM readiness_hints) published`
 
 	result, err := p.db.ExecContext(ctx, query,
 		pq.Array(params.IDs),
 		pq.Array(params.BlockedTills),
+		pq.Array(params.Generations),
+		pq.Array(allowed),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("snooze tasks: %w", err)
@@ -508,6 +546,7 @@ type GetStuckTasksParams struct {
 
 // StuckTask represents a task that appears to be stuck (running too long).
 type StuckTask struct {
+	ClaimGeneration int64  `db:"claim_generation"`
 	ID              int64  `db:"id"`
 	Type            string `db:"type"`
 	AttemptsLeft    int    `db:"attempts_left"`
@@ -518,7 +557,7 @@ type StuckTask struct {
 // A task is considered stuck if its status is 'running' and attempted_at < stuckHorizon.
 func (p *Repository) GetStuckTasks(ctx context.Context, params GetStuckTasksParams) ([]StuckTask, error) {
 	const query = `
-	SELECT id, type, attempts_left, attempts_elapsed
+	SELECT id, claim_generation, type, attempts_left, attempts_elapsed
 	FROM asynqpg_tasks
 	WHERE status = 'running'
 	  AND attempted_at < $1

@@ -109,7 +109,7 @@ func TestCompleteTasksMany_Basic(t *testing.T) {
 	require.Len(t, readyTasks, 2)
 
 	ids := []int64{readyTasks[0].ID, readyTasks[1].ID}
-	count, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{IDs: ids})
+	count, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{Generations: firstGenerations(ids), IDs: ids})
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 }
@@ -121,7 +121,7 @@ func TestCompleteTasksMany_EmptyArray(t *testing.T) {
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
 
-	count, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{IDs: []int64{}})
+	count, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{Generations: firstGenerations([]int64{}), IDs: []int64{}})
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
 }
@@ -133,7 +133,7 @@ func TestCompleteTasksMany_NonExistentIDs(t *testing.T) {
 	repo := repository.NewRepository(database)
 	ctx := context.Background()
 
-	count, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{IDs: []int64{999999, 999998}})
+	count, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{Generations: firstGenerations([]int64{999999, 999998}), IDs: []int64{999999, 999998}})
 	require.NoError(t, err)
 	assert.Equal(t, 0, count) // No tasks updated
 }
@@ -161,12 +161,12 @@ func TestCompleteTasksMany_AlreadyCompleted(t *testing.T) {
 	require.Len(t, readyTasks, 1)
 
 	// Complete once
-	count1, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{IDs: []int64{readyTasks[0].ID}})
+	count1, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{Generations: firstGenerations([]int64{readyTasks[0].ID}), IDs: []int64{readyTasks[0].ID}})
 	require.NoError(t, err)
 	assert.Equal(t, 1, count1)
 
 	// Complete again - should be idempotent (0 affected)
-	count2, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{IDs: []int64{readyTasks[0].ID}})
+	count2, err := repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{Generations: firstGenerations([]int64{readyTasks[0].ID}), IDs: []int64{readyTasks[0].ID}})
 	require.NoError(t, err)
 	assert.Equal(t, 0, count2)
 }
@@ -196,7 +196,7 @@ func TestFailTasksMany_Basic(t *testing.T) {
 	ids := []int64{readyTasks[0].ID, readyTasks[1].ID}
 	messages := []string{"error 1", "error 2"}
 
-	count, err := repo.FailTasksMany(ctx, repository.FailTasksManyParams{IDs: ids, Messages: messages})
+	count, err := repo.FailTasksMany(ctx, repository.FailTasksManyParams{Generations: firstGenerations(ids), IDs: ids, Messages: messages})
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 }
@@ -225,7 +225,7 @@ func TestFailTasksMany_DifferentMessages(t *testing.T) {
 	ids := []int64{readyTasks[0].ID, readyTasks[1].ID}
 	messages := []string{"unique error for task 1", "unique error for task 2"}
 
-	_, err = repo.FailTasksMany(ctx, repository.FailTasksManyParams{IDs: ids, Messages: messages})
+	_, err = repo.FailTasksMany(ctx, repository.FailTasksManyParams{Generations: firstGenerations(ids), IDs: ids, Messages: messages})
 	require.NoError(t, err)
 
 	// Verify messages were stored correctly (would need a GetTask method to verify)
@@ -239,7 +239,7 @@ func TestFailTasksMany_MismatchedLengths(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := repo.FailTasksMany(ctx, repository.FailTasksManyParams{
-		IDs:      []int64{1, 2, 3},
+		Generations: firstGenerations([]int64{1, 2, 3}), IDs: []int64{1, 2, 3},
 		Messages: []string{"only one message"},
 	})
 	require.Error(t, err)
@@ -276,7 +276,7 @@ func TestRetryTasksMany_Basic(t *testing.T) {
 	messages := []string{"retry reason 1", "retry reason 2"}
 
 	count, err := repo.RetryTasksMany(ctx, repository.RetryTasksManyParams{
-		IDs:          ids,
+		Generations: firstGenerations(ids), IDs: ids,
 		BlockedTills: blockedTills,
 		Messages:     messages,
 	})
@@ -292,7 +292,7 @@ func TestRetryTasksMany_MismatchedLengths(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := repo.RetryTasksMany(ctx, repository.RetryTasksManyParams{
-		IDs:          []int64{1, 2},
+		Generations: firstGenerations([]int64{1, 2}), IDs: []int64{1, 2},
 		BlockedTills: []time.Time{time.Now()}, // Only 1
 		Messages:     []string{"msg1", "msg2"},
 	})
@@ -326,7 +326,7 @@ func TestRetryTasksMany_MixedStates(t *testing.T) {
 	require.Len(t, readyTasks, 3)
 
 	// Complete one task
-	_, err = repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{IDs: []int64{readyTasks[0].ID}})
+	_, err = repo.CompleteTasksMany(ctx, repository.CompleteTasksManyParams{Generations: firstGenerations([]int64{readyTasks[0].ID}), IDs: []int64{readyTasks[0].ID}})
 	require.NoError(t, err)
 
 	// Try to retry all 3 - only 2 should be affected (the completed one won't be)
@@ -335,7 +335,7 @@ func TestRetryTasksMany_MixedStates(t *testing.T) {
 	messages := []string{"msg1", "msg2", "msg3"}
 
 	count, err := repo.RetryTasksMany(ctx, repository.RetryTasksManyParams{
-		IDs:          ids,
+		Generations: firstGenerations(ids), IDs: ids,
 		BlockedTills: blockedTills,
 		Messages:     messages,
 	})

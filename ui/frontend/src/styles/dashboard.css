@@ -163,6 +163,7 @@ html[data-page-hidden] .live-pulse {
   overflow: auto;
   position: relative;
 }
+body.drawer-open .main { overflow: hidden; }
 
 /* ===== Sidebar ============================================================== */
 .brand-row {
@@ -453,6 +454,7 @@ html[data-page-hidden] .live-pulse {
   border-bottom: 1px solid var(--border);
 }
 .kpi-strip.kpi-strip-4 { grid-template-columns: repeat(4, 1fr); }
+.kpi-strip.kpi-strip-3 { grid-template-columns: repeat(3, 1fr); }
 .kpi {
   padding: 16px 18px;
   border-right: 1px solid var(--border);
@@ -462,8 +464,7 @@ html[data-page-hidden] .live-pulse {
 .kpi:last-child { border-right: none; }
 .kpi .lbl {
   font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--fg-2); display: flex; align-items: center; gap: 6px;
-  font-weight: 500;
+  color: var(--fg-3); display: flex; align-items: center; gap: 6px;
 }
 .kpi .num {
   font-family: var(--font-mono); font-size: 26px; font-weight: 500;
@@ -498,7 +499,7 @@ html[data-page-hidden] .live-pulse {
   transition: background var(--dur-micro) var(--ease);
   position: relative;
 }
-.q-card:hover { background: var(--surface-2); }
+.q-card:hover { background: var(--surface-1); }
 .q-card .head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
 }
@@ -712,7 +713,7 @@ table.dt td.act { width: 48px; }
 
 /* ===== Drawer ============================================================== */
 .drawer-scrim {
-  position: absolute; inset: 0;
+  position: fixed; top: var(--top-h); left: var(--side-w); right: 0; bottom: 0;
   background: color-mix(in oklch, var(--bg) 60%, transparent);
   backdrop-filter: blur(2px);
   z-index: 8;
@@ -721,7 +722,7 @@ table.dt td.act { width: 48px; }
 @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
 
 .drawer {
-  position: absolute; top: 0; bottom: 0; right: 0;
+  position: fixed; top: var(--top-h); bottom: 0; right: 0;
   width: var(--drawer-w);
   background: var(--bg);
   border-left: 1px solid var(--border);
@@ -792,6 +793,7 @@ table.dt td.act { width: 48px; }
 
 .drawer-body {
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 16px 18px 24px;
 }
 .drawer-body section { margin-bottom: 18px; }
@@ -902,8 +904,11 @@ table.dt td.act { width: 48px; }
 /* ===== Cmd-K palette ======================================================= */
 .cmdk-scrim {
   position: fixed; inset: 0; z-index: 50;
-  background: color-mix(in oklch, var(--bg) 60%, transparent);
-  backdrop-filter: blur(2px);
+  /* Fixed dark dim in both themes: the slate scale inverts in dark mode,
+     so a slate token would wash the backdrop white. */
+  background: color-mix(in oklch, oklch(11% 0.012 250) 64%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: grid; place-items: start center;
   padding-top: 12vh;
   animation: fade 120ms var(--ease);
@@ -916,6 +921,8 @@ table.dt td.act { width: 48px; }
   overflow: hidden;
   box-shadow: var(--shadow-overlay);
 }
+/* Near-black, low-chroma panel in dark mode (surface-2 reads bluish). */
+[data-theme="dark"] .cmdk { background: oklch(13% 0.006 250); }
 .cmdk-input {
   display: flex; align-items: center; gap: 10px;
   padding: 14px 16px;
@@ -928,7 +935,13 @@ table.dt td.act { width: 48px; }
   font-family: var(--font-sans); font-size: 15px; color: var(--fg-1);
 }
 .cmdk-input input::placeholder { color: var(--fg-3); }
-.cmdk-list { max-height: 420px; overflow: auto; padding: 6px; }
+.cmdk-list {
+  max-height: 420px;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  padding: 6px;
+  scrollbar-gutter: stable;
+}
 .cmdk-grp {
   font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase;
   color: var(--fg-3);
@@ -998,6 +1011,23 @@ table.dt td.act { width: 48px; }
 .maint-task-desc {
   font-size: 12.5px; color: var(--fg-2); line-height: 1.5;
 }
+.maint-task-meta {
+  margin-top: 6px;
+  font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--fg-3); line-height: 1.6;
+}
+.maint-task-badge {
+  flex: 0 0 auto; align-self: flex-start;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--fg-3); white-space: nowrap;
+}
+.maint-task-badge.active {
+  color: var(--status-pending);
+  border-color: color-mix(in oklch, var(--status-pending) 30%, transparent);
+  background: color-mix(in oklch, var(--status-pending) 10%, var(--bg));
+}
 
 /* ===== Workers / maintenance =============================================== */
 .section-block { padding: 18px var(--section-pad); border-bottom: 1px solid var(--border); }
@@ -1041,6 +1071,79 @@ table.dt td.act { width: 48px; }
 }
 .leader-card .lease .l { font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-3); }
 .leader-card .lease .v { font-family: var(--font-mono); font-size: 14px; color: var(--fg-1); margin-top: 2px; }
+
+/* ===== Workers: consumer cards ============================================= */
+.consumer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  gap: 14px;
+}
+.consumer-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-3);
+  background: var(--bg);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.consumer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+.consumer-id { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.consumer-id .who {
+  font-family: var(--font-mono); font-size: 13.5px; font-weight: 500; color: var(--fg-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.leader-pill {
+  flex: none;
+  display: grid; place-items: center;
+  width: 20px; height: 20px;
+  border-radius: var(--r-1);
+  color: var(--brand-600);
+  background: color-mix(in oklch, var(--brand-600) 14%, var(--bg));
+  border: 1px solid color-mix(in oklch, var(--brand-600) 30%, transparent);
+}
+.consumer-tags { display: flex; gap: 6px; flex: none; }
+.consumer-tags .tag {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px;
+  color: var(--fg-2); background: var(--surface-2); border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.consumer-tags .tag.muted { color: var(--fg-3); }
+.consumer-meta {
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-3);
+  padding: 10px 14px 0;
+}
+.consumer-empty {
+  font-family: var(--font-mono); font-size: 12px; color: var(--fg-3);
+  padding: 14px;
+}
+.consumer-card .table-wrap { border: 0; margin: 10px 0 0; }
+.util { display: flex; align-items: center; gap: 8px; }
+.util-track {
+  flex: 1; height: 6px; border-radius: 999px;
+  background: var(--surface-2); overflow: hidden;
+  border: 1px solid var(--border);
+}
+.util-fill {
+  display: block; height: 100%;
+  background: var(--fg-3); border-radius: 999px;
+  transition: width var(--dur-micro) var(--ease);
+}
+.util-fill.live { background: var(--status-running); }
+.util-num { font-size: 12px; color: var(--fg-2); min-width: 34px; text-align: right; }
+.consumer-foot {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  padding: 10px 14px 12px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--fg-3);
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
 
 /* Activity timeline */
 .activity {
@@ -1141,7 +1244,9 @@ table.dt td.act { width: 48px; }
 }
 .rat-dismiss:hover { border-color: var(--brand-600); color: var(--brand-600); }
 
-/* Scrollbars (subtle) */
+/* Scrollbars: subtle but actually visible. Thumb sits on --border-strong so
+   it reads against both white (--surface-2) and near-white (--bg) panels;
+   the inset border separates the thumb from its track. */
 .main::-webkit-scrollbar,
 .drawer-body::-webkit-scrollbar,
 .cmdk-list::-webkit-scrollbar,
@@ -1150,11 +1255,30 @@ table.dt td.act { width: 48px; }
 .drawer-body::-webkit-scrollbar-thumb,
 .cmdk-list::-webkit-scrollbar-thumb,
 .attempt pre.trace::-webkit-scrollbar-thumb {
-  background: var(--surface-2); border-radius: 5px;
-  border: 2px solid var(--bg);
+  background: var(--fg-4);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
-.main::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
-.main::-webkit-scrollbar-track { background: transparent; }
+.main::-webkit-scrollbar-thumb:hover,
+.drawer-body::-webkit-scrollbar-thumb:hover,
+.cmdk-list::-webkit-scrollbar-thumb:hover,
+.attempt pre.trace::-webkit-scrollbar-thumb:hover { background: var(--fg-3); background-clip: padding-box; }
+.main::-webkit-scrollbar-track,
+.drawer-body::-webkit-scrollbar-track,
+.cmdk-list::-webkit-scrollbar-track,
+.attempt pre.trace::-webkit-scrollbar-track { background: transparent; }
+
+/* Firefox-only styling. Chrome promotes the standard properties over
+   ::-webkit-scrollbar, so applying them globally would override our
+   pixel-width thumb in Chrome and we'd be back to overlay scrollbars on
+   macOS. Scope to Firefox via @supports for -moz-appearance. */
+@supports (-moz-appearance: none) {
+  .main, .drawer-body, .cmdk-list, .attempt pre.trace {
+    scrollbar-width: thin;
+    scrollbar-color: var(--fg-4) transparent;
+  }
+}
 
 /* ============================================================================
    Accessibility helpers
@@ -1172,7 +1296,6 @@ button.brand-link,
 button.t,
 button.v,
 button.cmdk-it,
-button.filter-pill,
 button.q-card,
 button.search-bar {
   font: inherit;
@@ -1182,6 +1305,11 @@ button.search-bar {
   color: inherit;
   margin: 0;
   padding: 0;
+}
+button.filter-pill {
+  font: inherit;
+  text-align: left;
+  margin: 0;
 }
 button.side-link { width: 100%; padding: 0 10px; }
 button.q-card { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px 14px; }
@@ -1262,20 +1390,28 @@ button.brand-link { background: transparent; }
   .crumbs { font-size: 12.5px; gap: 6px; min-width: 0; overflow: hidden; }
   .crumbs .seg, .crumbs .muted { overflow: hidden; text-overflow: ellipsis; }
   .env-pill { display: none; }
+  /* The search-bar is the only mobile entry point to the command palette,
+     so promote it from a transparent icon to a clearly tappable button. */
   .topbar .search-bar {
-    flex: 0 0 36px;
-    width: 36px; height: 36px;
+    flex: 0 0 40px;
+    width: 40px; height: 40px;
     padding: 0; justify-content: center;
-    border: 1px solid transparent; background: transparent;
+    border: 1px solid var(--border);
+    background: var(--surface-1);
     color: var(--fg-1);
+    border-radius: var(--r-2);
   }
   .topbar .search-bar:hover {
-    background: var(--surface-1);
-    border-color: transparent;
+    background: var(--surface-2);
+    border-color: var(--border-strong);
   }
   .topbar .search-bar .ph,
   .topbar .search-bar kbd { display: none; }
   .topbar .search-bar .ic { width: 18px; height: 18px; }
+
+  /* Generic mobile-hide hook for desktop-only UI affordances
+     (e.g. j/k/x/⌘K hint text in filter bars). */
+  .desktop-only { display: none !important; }
 
   /* Page header */
   .page-head {
@@ -1291,7 +1427,8 @@ button.brand-link { background: transparent; }
 
   /* KPI strip stacks 2-up on phone */
   .kpi-strip,
-  .kpi-strip.kpi-strip-4 { grid-template-columns: repeat(2, 1fr); }
+  .kpi-strip.kpi-strip-4,
+  .kpi-strip.kpi-strip-3 { grid-template-columns: repeat(2, 1fr); }
   .kpi { border-right: none; border-bottom: 1px solid var(--border); }
   .kpi:nth-child(odd) { border-right: 1px solid var(--border); }
   .kpi:nth-last-child(-n+2) { border-bottom: none; }
@@ -1352,7 +1489,7 @@ button.brand-link { background: transparent; }
   .drawer > * { min-width: 0; max-width: 100%; }
   .drawer-summary { overflow-x: hidden; }
   @keyframes slideup { from { transform: translateY(100%) } to { transform: none } }
-  .drawer-scrim { position: fixed; z-index: 65; }
+  .drawer-scrim { position: fixed; inset: 0; z-index: 65; }
   .drawer-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1435,6 +1572,7 @@ button.brand-link { background: transparent; }
   .cb-input { width: 18px; height: 18px; }
   .cb-input:checked::after { left: 5px; top: 2px; width: 5px; height: 10px; }
   .tabs .t { padding: 12px 14px; }
+  .topbar .search-bar { min-width: 44px; min-height: 44px; }
 }
 
 /* ============================================================================
@@ -1491,4 +1629,18 @@ button.brand-link { background: transparent; }
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Request state belongs to the affected section, including cached data. */
+.query-notice {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  padding: 12px var(--section-pad); color: var(--fg-2);
+}
+.preview-settings { color: var(--fg-2); font-size: 12px; overflow-wrap: anywhere; }
+.consumer-card .table-wrap { min-width: 0; max-width: 100%; overflow-x: auto; }
+.leader-card .who { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .consumer-head { flex-wrap: wrap; }
+  .consumer-meta { overflow-wrap: anywhere; }
+  .maint-task { flex-wrap: wrap; }
 }

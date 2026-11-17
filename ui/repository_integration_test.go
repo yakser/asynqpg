@@ -4,8 +4,14 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/yakser/asynqpg/testutils"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
@@ -819,6 +825,143 @@ func TestGetLeader_ReturnsRow(t *testing.T) {
 	assert.True(t, row.ExpiresAt.After(row.ElectedAt))
 }
 
+// --- PreviewRescue ---
+
+func TestPreviewRescue_CountsStuckByAttempts(t *testing.T) {
+	t.Parallel()
+
+	uiRepo, db := setupRepo(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Stuck (attempted 10m ago): two retriable, one discardable.
+	insertStuckRunningTask(t, db, "resc", 2, now.Add(-10*time.Minute))
+	insertStuckRunningTask(t, db, "resc", 1, now.Add(-10*time.Minute))
+	insertStuckRunningTask(t, db, "resc", 0, now.Add(-10*time.Minute))
+	// Running but attempted recently -> not stuck.
+	insertStuckRunningTask(t, db, "resc", 3, now.Add(-1*time.Minute))
+	// Non-running -> excluded.
+	insertPendingTask(t, db, "resc", []byte(`{}`))
+
+	got, err := uiRepo.PreviewRescue(ctx, now.Add(-5*time.Minute))
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), got.Total)
+	assert.Equal(t, int64(2), got.Retriable)
+	assert.Equal(t, int64(1), got.Discardable)
+}
+
+func TestPreviewRescue_EmptyDatabase(t *testing.T) {
+	t.Parallel()
+
+	uiRepo, _ := setupRepo(t)
+	ctx := context.Background()
+
+	got, err := uiRepo.PreviewRescue(ctx, time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, RescuePreview{}, got)
+}
+
+// --- PreviewCleanup ---
+
+func TestPreviewCleanup_CountsEligibleByStatus(t *testing.T) {
+	t.Parallel()
+
+	uiRepo, db := setupRepo(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// Finalized 48h ago -> past a 24h retention horizon.
+	insertFinalizedTask(t, db, "cln", statusCompleted, now.Add(-48*time.Hour))
+	insertFinalizedTask(t, db, "cln", statusCompleted, now.Add(-48*time.Hour))
+	insertFinalizedTask(t, db, "cln", statusFailed, now.Add(-48*time.Hour))
+	insertFinalizedTask(t, db, "cln", statusCancelled, now.Add(-48*time.Hour))
+	// Finalized recently -> not eligible.
+	insertFinalizedTask(t, db, "cln", statusCompleted, now.Add(-1*time.Hour))
+	// Still running -> excluded.
+	insertStuckRunningTask(t, db, "cln", 1, now)
+
+	horizon := now.Add(-24 * time.Hour)
+	got, err := uiRepo.PreviewCleanup(ctx, horizon, horizon, horizon)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), got.Completed)
+	assert.Equal(t, int64(1), got.Failed)
+	assert.Equal(t, int64(1), got.Cancelled)
+	assert.Equal(t, int64(4), got.Total)
+}
+
+func TestPreviewCleanup_PerStatusRetention(t *testing.T) {
+	t.Parallel()
+
+	uiRepo, db := setupRepo(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	// All finalized 3h ago.
+	insertFinalizedTask(t, db, "cln-ret", statusCompleted, now.Add(-3*time.Hour))
+	insertFinalizedTask(t, db, "cln-ret", statusFailed, now.Add(-3*time.Hour))
+
+	// Completed retention 1h (eligible), failed retention 7d (not eligible).
+	got, err := uiRepo.PreviewCleanup(ctx,
+		now.Add(-1*time.Hour),
+		now.Add(-7*24*time.Hour),
+		now.Add(-1*time.Hour),
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), got.Completed)
+	assert.Equal(t, int64(0), got.Failed)
+	assert.Equal(t, int64(1), got.Total)
+}
+
+// --- GetQueueHealth ---
+
+func TestGetQueueHealth_EmptyDatabase(t *testing.T) {
+	t.Parallel()
+
+	uiRepo, _ := setupRepo(t)
+	ctx := context.Background()
+
+	got, err := uiRepo.GetQueueHealth(ctx)
+
+	require.NoError(t, err)
+	assert.Nil(t, got.OldestPendingMs)
+	assert.Equal(t, int64(0), got.CompletedLast15m)
+	assert.Equal(t, int64(0), got.FailedLast15m)
+}
+
+func TestGetQueueHealth_OldestPendingAndThroughput(t *testing.T) {
+	t.Parallel()
+
+	uiRepo, db := setupRepo(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	insertPendingTask(t, db, "qh", []byte(`{}`))
+	oldestID := insertPendingTask(t, db, "qh-delayed", []byte(`{}`))
+	_, err := db.ExecContext(ctx, `UPDATE asynqpg_tasks SET created_at = $1, blocked_till = now() + interval '1 hour' WHERE id = $2`, now.Add(-2*time.Hour), oldestID)
+	require.NoError(t, err)
+	for range 20 {
+		insertFinalizedTask(t, db, "qh-old", statusFailed, now.Add(-24*time.Hour))
+	}
+
+	// Throughput in the last 15 minutes.
+	insertFinalizedTask(t, db, "qh", statusCompleted, now)
+	insertFinalizedTask(t, db, "qh", statusFailed, now)
+	// Finalized over 15 minutes ago -> excluded from throughput.
+	insertFinalizedTask(t, db, "qh", statusCompleted, now.Add(-30*time.Minute))
+
+	got, err := uiRepo.GetQueueHealth(ctx)
+
+	require.NoError(t, err)
+	require.NotNil(t, got.OldestPendingMs)
+	assert.InDelta(t, float64((2 * time.Hour).Milliseconds()), *got.OldestPendingMs, 5000)
+	assert.Equal(t, int64(1), got.CompletedLast15m)
+	assert.Equal(t, int64(1), got.FailedLast15m)
+}
+
 func TestBulkDeleteFailed_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 
@@ -861,4 +1004,27 @@ func TestBulkDeleteFailed_ConcurrentAccess(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 0, result.Total)
+}
+
+func TestBulkRetryFailed_PublishesReadyNotification(t *testing.T) {
+	t.Parallel()
+	db, dsn := testutils.SetupTestDatabaseWithConnStr(t)
+
+	insertFailedTask(t, db, "bulk-notify")
+	insertFailedTask(t, db, "bulk-notify")
+	conn, err := pgx.Connect(context.Background(), dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+	var oid uint32
+	require.NoError(t, conn.QueryRow(context.Background(), "SELECT 'asynqpg_tasks'::regclass::oid").Scan(&oid))
+	_, err = conn.Exec(context.Background(), "LISTEN "+pgx.Identifier{fmt.Sprintf("asynqpg_ready_v1_%d", oid)}.Sanitize())
+	require.NoError(t, err)
+	affected, err := newRepository(db).BulkRetryFailed(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), affected)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	n, err := conn.WaitForNotification(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "bulk-notify", n.Payload)
 }

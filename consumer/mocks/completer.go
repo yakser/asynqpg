@@ -22,17 +22,17 @@ func (_m *Completer) EXPECT() *Completer_Expecter {
 	return &Completer_Expecter{mock: &_m.Mock}
 }
 
-// Complete provides a mock function with given fields: taskID
-func (_m *Completer) Complete(taskID int64) error {
-	ret := _m.Called(taskID)
+// Complete provides a mock function with given fields: taskID, generation
+func (_m *Completer) Complete(taskID int64, generation int64) error {
+	ret := _m.Called(taskID, generation)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Complete")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(int64) error); ok {
-		r0 = rf(taskID)
+	if rf, ok := ret.Get(0).(func(int64, int64) error); ok {
+		r0 = rf(taskID, generation)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -47,13 +47,14 @@ type Completer_Complete_Call struct {
 
 // Complete is a helper method to define mock.On call
 //   - taskID int64
-func (_e *Completer_Expecter) Complete(taskID interface{}) *Completer_Complete_Call {
-	return &Completer_Complete_Call{Call: _e.mock.On("Complete", taskID)}
+//   - generation int64
+func (_e *Completer_Expecter) Complete(taskID interface{}, generation interface{}) *Completer_Complete_Call {
+	return &Completer_Complete_Call{Call: _e.mock.On("Complete", taskID, generation)}
 }
 
-func (_c *Completer_Complete_Call) Run(run func(taskID int64)) *Completer_Complete_Call {
+func (_c *Completer_Complete_Call) Run(run func(taskID int64, generation int64)) *Completer_Complete_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(int64))
+		run(args[0].(int64), args[1].(int64))
 	})
 	return _c
 }
@@ -63,22 +64,22 @@ func (_c *Completer_Complete_Call) Return(_a0 error) *Completer_Complete_Call {
 	return _c
 }
 
-func (_c *Completer_Complete_Call) RunAndReturn(run func(int64) error) *Completer_Complete_Call {
+func (_c *Completer_Complete_Call) RunAndReturn(run func(int64, int64) error) *Completer_Complete_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// Fail provides a mock function with given fields: taskID, message
-func (_m *Completer) Fail(taskID int64, message string) error {
-	ret := _m.Called(taskID, message)
+// Fail provides a mock function with given fields: taskID, generation, message
+func (_m *Completer) Fail(taskID int64, generation int64, message string) error {
+	ret := _m.Called(taskID, generation, message)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Fail")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(int64, string) error); ok {
-		r0 = rf(taskID, message)
+	if rf, ok := ret.Get(0).(func(int64, int64, string) error); ok {
+		r0 = rf(taskID, generation, message)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -93,14 +94,15 @@ type Completer_Fail_Call struct {
 
 // Fail is a helper method to define mock.On call
 //   - taskID int64
+//   - generation int64
 //   - message string
-func (_e *Completer_Expecter) Fail(taskID interface{}, message interface{}) *Completer_Fail_Call {
-	return &Completer_Fail_Call{Call: _e.mock.On("Fail", taskID, message)}
+func (_e *Completer_Expecter) Fail(taskID interface{}, generation interface{}, message interface{}) *Completer_Fail_Call {
+	return &Completer_Fail_Call{Call: _e.mock.On("Fail", taskID, generation, message)}
 }
 
-func (_c *Completer_Fail_Call) Run(run func(taskID int64, message string)) *Completer_Fail_Call {
+func (_c *Completer_Fail_Call) Run(run func(taskID int64, generation int64, message string)) *Completer_Fail_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(int64), args[1].(string))
+		run(args[0].(int64), args[1].(int64), args[2].(string))
 	})
 	return _c
 }
@@ -110,22 +112,22 @@ func (_c *Completer_Fail_Call) Return(_a0 error) *Completer_Fail_Call {
 	return _c
 }
 
-func (_c *Completer_Fail_Call) RunAndReturn(run func(int64, string) error) *Completer_Fail_Call {
+func (_c *Completer_Fail_Call) RunAndReturn(run func(int64, int64, string) error) *Completer_Fail_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// Retry provides a mock function with given fields: taskID, blockedTill, message
-func (_m *Completer) Retry(taskID int64, blockedTill time.Time, message string) error {
-	ret := _m.Called(taskID, blockedTill, message)
+// Retry provides a mock function with given fields: taskID, generation, blockedTill, message
+func (_m *Completer) Retry(taskID int64, generation int64, blockedTill time.Time, message string) error {
+	ret := _m.Called(taskID, generation, blockedTill, message)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Retry")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(int64, time.Time, string) error); ok {
-		r0 = rf(taskID, blockedTill, message)
+	if rf, ok := ret.Get(0).(func(int64, int64, time.Time, string) error); ok {
+		r0 = rf(taskID, generation, blockedTill, message)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -140,15 +142,16 @@ type Completer_Retry_Call struct {
 
 // Retry is a helper method to define mock.On call
 //   - taskID int64
+//   - generation int64
 //   - blockedTill time.Time
 //   - message string
-func (_e *Completer_Expecter) Retry(taskID interface{}, blockedTill interface{}, message interface{}) *Completer_Retry_Call {
-	return &Completer_Retry_Call{Call: _e.mock.On("Retry", taskID, blockedTill, message)}
+func (_e *Completer_Expecter) Retry(taskID interface{}, generation interface{}, blockedTill interface{}, message interface{}) *Completer_Retry_Call {
+	return &Completer_Retry_Call{Call: _e.mock.On("Retry", taskID, generation, blockedTill, message)}
 }
 
-func (_c *Completer_Retry_Call) Run(run func(taskID int64, blockedTill time.Time, message string)) *Completer_Retry_Call {
+func (_c *Completer_Retry_Call) Run(run func(taskID int64, generation int64, blockedTill time.Time, message string)) *Completer_Retry_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(int64), args[1].(time.Time), args[2].(string))
+		run(args[0].(int64), args[1].(int64), args[2].(time.Time), args[3].(string))
 	})
 	return _c
 }
@@ -158,22 +161,22 @@ func (_c *Completer_Retry_Call) Return(_a0 error) *Completer_Retry_Call {
 	return _c
 }
 
-func (_c *Completer_Retry_Call) RunAndReturn(run func(int64, time.Time, string) error) *Completer_Retry_Call {
+func (_c *Completer_Retry_Call) RunAndReturn(run func(int64, int64, time.Time, string) error) *Completer_Retry_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// Snooze provides a mock function with given fields: taskID, blockedTill
-func (_m *Completer) Snooze(taskID int64, blockedTill time.Time) error {
-	ret := _m.Called(taskID, blockedTill)
+// Snooze provides a mock function with given fields: taskID, generation, blockedTill
+func (_m *Completer) Snooze(taskID int64, generation int64, blockedTill time.Time) error {
+	ret := _m.Called(taskID, generation, blockedTill)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Snooze")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(int64, time.Time) error); ok {
-		r0 = rf(taskID, blockedTill)
+	if rf, ok := ret.Get(0).(func(int64, int64, time.Time) error); ok {
+		r0 = rf(taskID, generation, blockedTill)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -188,14 +191,15 @@ type Completer_Snooze_Call struct {
 
 // Snooze is a helper method to define mock.On call
 //   - taskID int64
+//   - generation int64
 //   - blockedTill time.Time
-func (_e *Completer_Expecter) Snooze(taskID interface{}, blockedTill interface{}) *Completer_Snooze_Call {
-	return &Completer_Snooze_Call{Call: _e.mock.On("Snooze", taskID, blockedTill)}
+func (_e *Completer_Expecter) Snooze(taskID interface{}, generation interface{}, blockedTill interface{}) *Completer_Snooze_Call {
+	return &Completer_Snooze_Call{Call: _e.mock.On("Snooze", taskID, generation, blockedTill)}
 }
 
-func (_c *Completer_Snooze_Call) Run(run func(taskID int64, blockedTill time.Time)) *Completer_Snooze_Call {
+func (_c *Completer_Snooze_Call) Run(run func(taskID int64, generation int64, blockedTill time.Time)) *Completer_Snooze_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(int64), args[1].(time.Time))
+		run(args[0].(int64), args[1].(int64), args[2].(time.Time))
 	})
 	return _c
 }
@@ -205,7 +209,7 @@ func (_c *Completer_Snooze_Call) Return(_a0 error) *Completer_Snooze_Call {
 	return _c
 }
 
-func (_c *Completer_Snooze_Call) RunAndReturn(run func(int64, time.Time) error) *Completer_Snooze_Call {
+func (_c *Completer_Snooze_Call) RunAndReturn(run func(int64, int64, time.Time) error) *Completer_Snooze_Call {
 	_c.Call.Return(run)
 	return _c
 }

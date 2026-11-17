@@ -12,12 +12,18 @@ const meterName = "asynqpg"
 // Metrics holds all OpenTelemetry metric instruments for asynqpg.
 // When no MeterProvider is configured, all instruments are noop (zero overhead).
 type Metrics struct {
-	TasksEnqueued   metric.Int64Counter
-	TasksProcessed  metric.Int64Counter
-	TasksErrors     metric.Int64Counter
-	TaskDuration    metric.Float64Histogram
-	EnqueueDuration metric.Float64Histogram
-	TasksInFlight   metric.Int64UpDownCounter
+	NotificationsReceived   metric.Int64Counter
+	NotificationsIgnored    metric.Int64Counter
+	NotificationReconnects  metric.Int64Counter
+	NotificationConnections metric.Int64UpDownCounter
+	ConsumerFetches         metric.Int64Counter
+	ConsumerEmptyFetches    metric.Int64Counter
+	TasksEnqueued           metric.Int64Counter
+	TasksProcessed          metric.Int64Counter
+	TasksErrors             metric.Int64Counter
+	TaskDuration            metric.Float64Histogram
+	EnqueueDuration         metric.Float64Histogram
+	TasksInFlight           metric.Int64UpDownCounter
 }
 
 // NewMetrics creates metric instruments from the given MeterProvider.
@@ -80,6 +86,29 @@ func NewMetrics(mp metric.MeterProvider) (*Metrics, error) {
 		EnqueueDuration: enqueueDuration,
 		TasksInFlight:   tasksInFlight,
 	}
+
+	counters := []struct {
+		target            *metric.Int64Counter
+		name, description string
+	}{
+		{&m.NotificationsReceived, "asynqpg.notifications.received", "Number of readiness hints received"},
+		{&m.NotificationsIgnored, "asynqpg.notifications.ignored", "Number of hints for unregistered task types"},
+		{&m.NotificationReconnects, "asynqpg.notifications.reconnects", "Successful listener reconnections"},
+		{&m.ConsumerFetches, "asynqpg.consumer.fetches", "Actual task claim query attempts"},
+		{&m.ConsumerEmptyFetches, "asynqpg.consumer.empty_fetches", "Task claim queries returning no tasks"},
+	}
+	for _, counter := range counters {
+		instrument, instrumentErr := meter.Int64Counter(counter.name, metric.WithDescription(counter.description))
+		if instrumentErr != nil {
+			return nil, instrumentErr
+		}
+		*counter.target = instrument
+	}
+	connections, err := meter.Int64UpDownCounter("asynqpg.notifications.connected", metric.WithDescription("Current connected listener sessions"))
+	if err != nil {
+		return nil, err
+	}
+	m.NotificationConnections = connections
 	m.init()
 	return m, nil
 }
@@ -93,4 +122,10 @@ func (m *Metrics) init() {
 	m.TasksProcessed.Add(ctx, 0)
 	m.TasksErrors.Add(ctx, 0)
 	m.TasksInFlight.Add(ctx, 0)
+	m.NotificationsReceived.Add(ctx, 0)
+	m.NotificationsIgnored.Add(ctx, 0)
+	m.NotificationReconnects.Add(ctx, 0)
+	m.NotificationConnections.Add(ctx, 0)
+	m.ConsumerFetches.Add(ctx, 0)
+	m.ConsumerEmptyFetches.Add(ctx, 0)
 }

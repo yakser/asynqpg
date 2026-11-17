@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
+	"github.com/yakser/asynqpg/internal/publisher"
 )
 
 // ErrNoLeader is returned by GetLeader when the asynqpg_leader table has no row yet.
@@ -15,7 +17,8 @@ var ErrNoLeader = errors.New("no leader row")
 
 // repository provides database queries specific to the UI layer.
 type repository struct {
-	db pool
+	db        pool
+	publisher publisher.Limiter
 
 	typesCacheMu    sync.RWMutex
 	typesCacheData  []string
@@ -227,6 +230,87 @@ func (r *repository) GetLeader(ctx context.Context) (*LeaderRow, error) {
 	return &rows[0], nil
 }
 
+// RescuePreview reports how many running tasks the Rescuer would act on right
+// now: tasks running past the stuck threshold, split by whether they still have
+// retries left.
+type RescuePreview struct {
+	Total       int64 `db:"total"`
+	Retriable   int64 `db:"retriable"`
+	Discardable int64 `db:"discardable"`
+}
+
+// PreviewRescue counts running tasks stuck past stuckBefore, mirroring the
+// Rescuer's selection (internal/maintenance/rescuer.go). It performs no writes.
+func (r *repository) PreviewRescue(ctx context.Context, stuckBefore time.Time) (RescuePreview, error) {
+	const query = `SELECT
+		count(*) FILTER (WHERE attempts_left > 0)  AS retriable,
+		count(*) FILTER (WHERE attempts_left = 0)  AS discardable,
+		count(*)                                   AS total
+	FROM asynqpg_tasks
+	WHERE status = 'running' AND attempted_at < $1`
+
+	var preview RescuePreview
+	if err := r.db.GetContext(ctx, &preview, query, stuckBefore); err != nil {
+		return RescuePreview{}, fmt.Errorf("preview rescue: %w", err)
+	}
+	return preview, nil
+}
+
+// CleanupPreview reports how many finalized tasks the Cleaner would delete right
+// now, broken down by status. Total is the sum of the three.
+type CleanupPreview struct {
+	Total     int64 `db:"-"`
+	Completed int64 `db:"completed"`
+	Failed    int64 `db:"failed"`
+	Cancelled int64 `db:"cancelled"`
+}
+
+// PreviewCleanup counts finalized tasks past their retention windows, mirroring
+// the Cleaner's selection (internal/maintenance/cleaner.go). It performs no writes.
+func (r *repository) PreviewCleanup(ctx context.Context, completedBefore, failedBefore, cancelledBefore time.Time) (CleanupPreview, error) {
+	const query = `SELECT
+		count(*) FILTER (WHERE status = 'completed' AND finalized_at < $1) AS completed,
+		count(*) FILTER (WHERE status = 'failed'    AND finalized_at < $2) AS failed,
+		count(*) FILTER (WHERE status = 'cancelled' AND finalized_at < $3) AS cancelled
+	FROM asynqpg_tasks
+	WHERE (status = 'completed' AND finalized_at < $1)
+	   OR (status = 'failed'    AND finalized_at < $2)
+	   OR (status = 'cancelled' AND finalized_at < $3)`
+
+	var preview CleanupPreview
+	if err := r.db.GetContext(ctx, &preview, query, completedBefore, failedBefore, cancelledBefore); err != nil {
+		return CleanupPreview{}, fmt.Errorf("preview cleanup: %w", err)
+	}
+	preview.Total = preview.Completed + preview.Failed + preview.Cancelled
+	return preview, nil
+}
+
+// QueueHealth holds general queue-health metrics derived from the task table.
+type QueueHealth struct {
+	// OldestPendingMs is the age in milliseconds of the oldest pending task,
+	// or nil when there are no pending tasks.
+	OldestPendingMs  *float64 `db:"oldest_pending_ms"`
+	CompletedLast15m int64    `db:"completed_15m"`
+	FailedLast15m    int64    `db:"failed_15m"`
+}
+
+// GetQueueHealth returns the age of the oldest pending task and recent
+// throughput (completed/failed in the last 15 minutes).
+func (r *repository) GetQueueHealth(ctx context.Context) (QueueHealth, error) {
+	const query = `SELECT
+		EXTRACT(EPOCH FROM (now() - min(created_at) FILTER (WHERE status = 'pending'))) * 1000 AS oldest_pending_ms,
+		count(*) FILTER (WHERE status = 'completed') AS completed_15m,
+		count(*) FILTER (WHERE status = 'failed'    AND finalized_at > now() - interval '15 minutes') AS failed_15m
+	FROM asynqpg_tasks
+ WHERE status = 'pending' OR (status IN ('completed', 'failed') AND finalized_at > now() - interval '15 minutes')`
+
+	var health QueueHealth
+	if err := r.db.GetContext(ctx, &health, query); err != nil {
+		return QueueHealth{}, fmt.Errorf("get queue health: %w", err)
+	}
+	return health, nil
+}
+
 const bulkBatchSize = 1000
 
 // BulkRetryFailed moves failed tasks back to pending in batches.
@@ -238,7 +322,7 @@ func (r *repository) BulkRetryFailed(ctx context.Context, taskType *string) (int
 		  AND ($1::text IS NULL OR type = $1)
 		LIMIT $2
 		FOR UPDATE SKIP LOCKED
-	)
+	) , changed AS (
 	UPDATE asynqpg_tasks
 	SET status = 'pending',
 		finalized_at = NULL,
@@ -246,11 +330,16 @@ func (r *repository) BulkRetryFailed(ctx context.Context, taskType *string) (int
 		attempts_left = CASE WHEN asynqpg_tasks.attempts_left = 0 THEN 1 ELSE asynqpg_tasks.attempts_left END,
 		updated_at = now()
 	FROM batch
-	WHERE asynqpg_tasks.id = batch.id`
+	WHERE asynqpg_tasks.id = batch.id RETURNING asynqpg_tasks.type)` + publisher.CTE("changed", "true", 3) + `SELECT type FROM changed CROSS JOIN (SELECT count(*) FROM readiness_hints) published`
 
 	var totalAffected int64
 	for {
-		result, err := r.db.ExecContext(ctx, query, taskType, bulkBatchSize)
+		var types []string
+		if err := r.db.SelectContext(ctx, &types, `SELECT DISTINCT type FROM asynqpg_tasks WHERE status='failed' AND ($1::text IS NULL OR type=$1)`, taskType); err != nil {
+			return totalAffected, fmt.Errorf("resolve retry types: %w", err)
+		}
+		allowed := r.publisher.Reserve(types)
+		result, err := r.db.ExecContext(ctx, query, taskType, bulkBatchSize, pq.Array(allowed))
 		if err != nil {
 			return totalAffected, fmt.Errorf("bulk retry tasks: %w", err)
 		}

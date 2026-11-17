@@ -17,6 +17,7 @@ export function FilterField({ value, onChange, placeholder, count }: FilterField
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         spellCheck={false}
+        inputMode="search"
       />
       {value && (
         <button

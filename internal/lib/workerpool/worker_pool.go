@@ -15,14 +15,18 @@ type WorkerPool struct {
 	stopChans []chan struct{}
 	wg        sync.WaitGroup
 	closed    bool
+	closedCh  chan struct{}
+	capacity  chan struct{}
 
 	busy atomic.Int64
 }
 
 func NewWorkerPool(workerCount int) *WorkerPool {
 	p := &WorkerPool{
-		tasks:   make(chan Task),
-		workers: 0,
+		tasks:    make(chan Task),
+		closedCh: make(chan struct{}),
+		capacity: make(chan struct{}, 1),
+		workers:  0,
 	}
 	p.Resize(workerCount)
 	return p
@@ -39,9 +43,9 @@ func (p *WorkerPool) startWorker(stopCh <-chan struct{}) {
 					return
 				}
 				if task != nil {
-					p.busy.Add(1)
 					task()
 					p.busy.Add(-1)
+					p.signalCapacity()
 				}
 			}
 		}
@@ -67,6 +71,7 @@ func (p *WorkerPool) Resize(n int) {
 			p.startWorker(stopCh)
 		}
 		p.workers = n
+		p.signalCapacity()
 		return
 	}
 
@@ -87,19 +92,43 @@ func (p *WorkerPool) Submit(task Task) error {
 		p.mu.Unlock()
 		return errors.New("worker pool is closed")
 	}
+	if task != nil {
+		p.busy.Add(1)
+	}
 	p.mu.Unlock()
 
-	p.tasks <- task
-	return nil
+	select {
+	case p.tasks <- task:
+		return nil
+	case <-p.closedCh:
+		if task != nil {
+			p.busy.Add(-1)
+			p.signalCapacity()
+		}
+		return errors.New("worker pool is closed")
+	}
+}
+
+// CapacityAvailable coalesces capacity releases and increases into a nonblocking hint.
+// Receivers must recheck FreeWorkers; the channel is never closed.
+func (p *WorkerPool) CapacityAvailable() <-chan struct{} { return p.capacity }
+
+func (p *WorkerPool) signalCapacity() {
+	select {
+	case p.capacity <- struct{}{}:
+	default:
+	}
 }
 
 func (p *WorkerPool) Close() {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
+		p.wg.Wait()
 		return
 	}
 	p.closed = true
+	close(p.closedCh)
 
 	for _, ch := range p.stopChans {
 		close(ch)
@@ -107,8 +136,14 @@ func (p *WorkerPool) Close() {
 	p.stopChans = nil
 	p.mu.Unlock()
 
-	close(p.tasks)
 	p.wg.Wait()
+}
+
+// Workers returns the current size of the worker pool.
+func (p *WorkerPool) Workers() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.workers
 }
 
 func (p *WorkerPool) FreeWorkers() int {

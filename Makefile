@@ -6,6 +6,8 @@ help: ## Show all commands
 .PHONY: migrate
 migrate: ## Apply migrations
 	@docker exec -i asynqpg-postgres psql -U postgres -d asynqpg < migrations/001_initial.sql > /dev/null 2>&1
+	@docker exec -i asynqpg-postgres psql -v ON_ERROR_STOP=1 -U postgres -d asynqpg < migrations/002_claim_generation.sql
+	@docker exec -i asynqpg-postgres psql -v ON_ERROR_STOP=1 -U postgres -d asynqpg < migrations/003_remove_readiness_triggers.sql
 	@echo "Migrations applied."
 
 .PHONY: generate
@@ -39,12 +41,6 @@ test-integration: ## Run integration tests (all modules)
 .PHONY: test-all
 test-all: test test-integration ## Run all tests
 
-.PHONY: bench
-bench: ## Run benchmarks (integration, requires Docker)
-	@echo "Running benchmarks..."
-	go test -v -tags=integration -bench=. -benchmem -count=3 -timeout=30m ./...
-	@echo "Benchmarks completed"
-
 .PHONY: fake-assets
 fake-assets: ## Create placeholder dist/ for Go-only development
 	@mkdir -p ui/frontend/dist/assets
@@ -60,7 +56,7 @@ demo-up: ## Start PostgreSQL + observability stack (Jaeger, Prometheus, Grafana,
 	@echo "Starting infrastructure..."
 	docker compose -f docker-compose.yaml -f deploy/docker-compose.observability.yaml --env-file examples/demo/.env up -d --quiet-pull
 	@echo "Waiting for services to be ready..."
-	@sleep 5
+	@sleep 1
 	@echo "Infrastructure ready."
 
 .PHONY: demo-down
@@ -91,3 +87,7 @@ release-core: ## Release core module (usage: make release-core V=v0.5.0)
 .PHONY: release-ui
 release-ui: ## Release UI module (usage: make release-ui V=v0.1.0)
 	python3 scripts/release.py ui $(V)
+
+.PHONY: remove-legacy-notifications
+remove-legacy-notifications: ## Remove legacy readiness triggers (library publishes hints)
+	@docker exec -i asynqpg-postgres psql -U postgres -d asynqpg -v ON_ERROR_STOP=1 -1 < migrations/003_remove_readiness_triggers.sql
